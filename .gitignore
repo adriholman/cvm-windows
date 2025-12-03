@@ -1,0 +1,39 @@
+# cvm - Composer Version Manager
+# Ignora archivos de configuración local y cachés
+
+# Directorio de instalación local (cuando se prueba sin instalar)
+.cvm/
+.composerx/
+
+# Archivos de configuración de usuario
+config.json
+
+# Logs y temporales
+*.log
+*.tmp
+
+# Versiones descargadas (cachés de composer.phar)
+versions/
+
+# Archivos de sistema Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Archivos de sistema macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# PowerShell transcripts y módulos compilados
+PowerShell_transcript.*
+*.psd1
+*.psm1
+

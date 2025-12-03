@@ -1,0 +1,257 @@
+# cvm - Composer Version Manager for Windows
+
+> Note
+> This project originated from a personal need. It may contain mistakes or rough edges. You are free to use, modify, and adapt it for your own purposes. If you prefer, you’re very welcome to contribute improvements back to this repository via issues or pull requests.
+
+**cvm** (Composer Version Manager) is a Composer version manager for Windows, written in PowerShell. It allows you to install, switch, and manage multiple Composer versions on the same system.
+
+## ✨ Features
+
+- 🔄 **Multiple versions**: Install and use Composer 1.x, 2.x, stable, preview, or specific versions (e.g., `2.7.1`)
+- 📁 **Per-project**: Use `.composer-version` to pin versions per project
+- 🌍 **Global**: Set a default version for the entire system
+- 🔐 **SHA256 verification**: Verifies checksums for exact versions (security)
+- ⚡ **Transparent proxy**: Run `cvm install 2` then `cvm require vendor/package` without thinking
+- 🛠️ **Clean PATH**: Single `cvm.ps1` script in your PATH, no system pollution
+
+## 📦 Installation
+
+### 1. Clone the repository
+
+```powershell
+git clone https://github.com/adriholman/cvm.git
+cd cvm
+```
+
+### 2. Run the installer
+
+```powershell
+# Install cvm (adds cvm to your PATH)
+.\scripts\setup-path.ps1 -Action install
+```
+
+### 3. Open a new terminal
+
+The script modifies the user PATH. Close and open a new PowerShell terminal to apply the changes.
+
+### 4. Verify installation
+
+```powershell
+cvm which
+```
+
+## 🚀 Usage
+
+### Install versions
+
+```powershell
+# Install Composer 2 (latest stable from 2.x branch)
+cvm install 2
+
+# Install Composer 1 (latest stable from 1.x branch)
+cvm install 1
+
+# Install the latest stable version (any branch)
+cvm install stable
+
+# Install the latest preview
+cvm install preview
+
+# Install a specific version
+cvm install 2.7.1
+```
+
+### Set default version
+
+```powershell
+# Set Composer 2 as global default version
+cvm default 2
+
+# Or use a specific version
+cvm default 2.7.1
+```
+
+### View active version information
+
+```powershell
+cvm which
+```
+
+Shows:
+- Version source (`.composer-version` file, environment variable, or global default)
+- Current version
+- `composer.phar` file path
+- Cache directory
+- Configuration path
+
+### List installed versions
+
+```powershell
+cvm list
+```
+
+### Use Composer normally
+
+Once installed, you can use the `composer` command directly. The launcher resolves the version (env var, `.composer-version`, or global default), ensures it’s installed, and runs Composer.
+
+```powershell
+composer --version
+composer require symfony/console
+composer update
+composer install --no-dev
+```
+
+Tip: `cvm` is for version management: `cvm install <version>`, `cvm default <version>`, `cvm which`, `cvm list`.
+
+## 🎯 Version Resolution
+
+cvm resolves the version to use in the following priority order:
+
+1. **Environment variable `CVM_VERSION`**: For temporary sessions
+   ```powershell
+   $env:CVM_VERSION = "1"
+   cvm --version  # Will use Composer 1.x
+   ```
+
+2. **`.composer-version` file**: For specific projects
+   - cvm searches for `.composer-version` in the current directory and all parents
+   - Create a `.composer-version` file at your project root:
+     ```
+     2
+     ```
+   - Now any `cvm` command executed in that project will use Composer 2
+
+3. **Global default version**: Configured with `cvm default <version>`
+   - Saved in `%USERPROFILE%\.cvm\config.json`
+   - Used if there's no `.composer-version` or `CVM_VERSION`
+
+4. **Fallback**: If no configuration exists, uses `stable`
+
+## 📂 File Structure
+
+```
+%USERPROFILE%\.cvm\
+├── bin\
+│   └── cvm.ps1              # Installed script (copy from repo)
+├── versions\
+│   ├── 1\
+│   │   └── composer.phar    # Composer 1.x (latest version)
+│   ├── 2\
+│   │   └── composer.phar    # Composer 2.x (latest version)
+│   ├── stable\
+│   │   └── composer.phar    # Latest stable version
+│   └── 2.7.1\
+│       ├── composer.phar
+│       └── composer.phar.sha256sum
+└── config.json              # { "default": "2" }
+```
+
+## 🔧 Examples
+
+### Project with Composer 1 (legacy)
+
+```powershell
+cd my-old-project
+echo "1" > .composer-version
+cvm which                    # Shows version 1
+cvm install                  # Installs dependencies with Composer 1
+```
+
+### Project with Composer 2
+
+```powershell
+cd my-new-project
+echo "2" > .composer-version
+cvm install
+cvm require symfony/console
+```
+
+### Test a specific version temporarily
+
+```powershell
+$env:CVM_VERSION = "preview"
+cvm --version                # Shows preview version
+cvm selfupdate              # Updates Composer (within preview version)
+Remove-Item Env:\CVM_VERSION # Return to normal version
+```
+
+## 🗑️ Uninstallation
+
+```powershell
+# Uninstall cvm from PATH
+.\scripts\setup-path.ps1 -Action uninstall
+
+# Remove cached versions (optional)
+Remove-Item -Recurse -Force "$env:USERPROFILE\.cvm"
+```
+
+## ⚙️ Requirements
+
+- **Windows** with PowerShell 5.1+ or PowerShell 7+
+- **PHP CLI** in PATH (required to run Composer)
+  - Verify with: `php -v`
+  - If you don't have PHP, download it from [windows.php.net](https://windows.php.net/download/)
+
+## 📋 Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `cvm install <version>` | Downloads and caches the specified version |
+| `cvm default <version>` | Sets the global default version |
+| `cvm which` | Shows current resolution (version and path) |
+| `cvm list` | Lists locally installed versions |
+| `cvm <other-args>` | Proxy to composer - any other argument is forwarded |
+
+## 🐛 Troubleshooting
+
+### Error: "PHP not found in PATH"
+
+Install PHP and make sure `php.exe` is in your PATH:
+
+```powershell
+winget install --id PHP.PHP
+# Or download from https://windows.php.net/download/
+```
+
+Verify with: `php -v`
+
+### Error: "Invalid checksum"
+
+The download may be corrupted. Remove the version and reinstall:
+
+```powershell
+Remove-Item "$env:USERPROFILE\.cvm\versions\<version>" -Recurse -Force
+cvm install <version>
+```
+
+### Aliases don't work
+
+Reload your PowerShell profile:
+
+```powershell
+. $PROFILE
+```
+
+Or open a new terminal.
+
+## 🤝 Contributing
+
+Contributions are welcome! This is a community-friendly project that started as a personal need, so improvements and fixes are highly appreciated. Please:
+
+1. Fork the repository
+2. Create a branch for your feature (`git checkout -b feature/new-feature`)
+3. Commit your changes (`git commit -am 'Add new feature'`)
+4. Push to the branch (`git push origin feature/new-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+MIT License - feel free to use, modify, and distribute.
+
+## 🐛 Report Issues
+
+If you find a bug or have a suggestion, please open an [issue](https://github.com/adriholman/cvm/issues).
+
+---
+
+**Made with ❤️ for the PHP community on Windows**
