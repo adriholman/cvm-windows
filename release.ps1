@@ -88,32 +88,37 @@ Write-Success "Working directory is clean"
 Write-Step "Checking if tag already exists..."
 $tagExists = & git tag | Where-Object { $_ -eq $tag }
 if ($tagExists) {
-    Write-Error-Custom "Tag $tag already exists"
-    exit 1
+    Write-Host "Tag $tag already exists locally" -ForegroundColor Yellow
+    if (-not $Push) {
+        Write-Host "Dry run: no changes made. Delete with 'git tag -d $tag' if you want to recreate." -ForegroundColor Yellow
+    } else {
+        Write-Host "Will reuse existing local tag and push it." -ForegroundColor Yellow
+    }
+} else {
+    Write-Success "Tag $tag does not exist"
 }
-Write-Success "Tag $tag does not exist"
 
-# Step 3: Create git tag
-Write-Step "Creating git tag $tag..."
-& git tag -a $tag -m "Release version $Version"
-Write-Success "Created tag $tag"
+# Step 3: Create git tag (only when pushing and tag not present)
+if ($Push -and -not $tagExists) {
+    Write-Step "Creating git tag $tag..."
+    & git tag -a $tag -m "Release version $Version"
+    Write-Success "Created tag $tag"
+}
 
 # Step 4: Summary and push confirmation
 Write-Header "RELEASE READY"
 Write-Host "Version:      $Version" -ForegroundColor Cyan
 Write-Host "Tag:          $tag" -ForegroundColor Cyan
-Write-Host "Git Status:   Tag created (not pushed)" -ForegroundColor Yellow
+Write-Host "Git Status:   $(if ($Push) { 'Tag ready to push' } else { 'No changes (dry run)' })" -ForegroundColor Yellow
 
 if (-not $Push) {
     Write-Host "`n⚠️  DRY RUN MODE" -ForegroundColor Yellow
-    Write-Host "To push to GitHub, run:" -ForegroundColor Yellow
+    Write-Host "To create and push, run:" -ForegroundColor Yellow
     Write-Host "  .\release.ps1 -Push" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Commands that WOULD be executed:" -ForegroundColor Yellow
+    if (-not $tagExists) { Write-Host "  git tag -a $tag -m 'Release version $Version'" -ForegroundColor Gray }
     Write-Host "  git push origin $tag" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "To delete this test tag, run:" -ForegroundColor Yellow
-    Write-Host "  git tag -d $tag" -ForegroundColor Gray
     exit 0
 }
 
