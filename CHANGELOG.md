@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-01-08
+
+### Fixed
+- **Release archives now include setup-path.ps1**: Installation script was missing from release downloads
+- **Simplified release process**: Removed redundant local ZIP creation from release.ps1 (GitHub Actions handles it)
+
 ## [1.1.0] - 2026-01-08
 
 ### Added
