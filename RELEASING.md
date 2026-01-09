@@ -2,15 +2,29 @@
 
 This document describes how to create and publish a new release of cvm.
 
-## Version Format
+## Quick Start (Automated)
 
-cvm uses [Semantic Versioning](https://semver.org/):
+Simply run the release script:
 
-- **MAJOR**: Breaking changes (e.g., 1.0.0 → 2.0.0)
-- **MINOR**: New features, backward compatible (e.g., 1.0.0 → 1.1.0)
-- **PATCH**: Bug fixes (e.g., 1.0.0 → 1.0.1)
+```powershell
+# See what would happen (dry run)
+.\release.ps1
 
-## Release Process
+# Actually publish the release
+.\release.ps1 -Push
+```
+
+The script handles:
+- ✓ Creating release archive (cvm-release.zip)
+- ✓ Git tagging
+- ✓ Pushing to GitHub
+- ✓ GitHub Actions creates the release automatically
+
+Done! No manual steps needed.
+
+## Manual Process (for reference)
+
+If you need to manually release without the script:
 
 ### 1. Update Version and Changelog
 
@@ -22,7 +36,7 @@ Set-Content -Path VERSION -Value "1.1.0" -NoNewline -Encoding UTF8
 # Format: ## [X.Y.Z] - YYYY-MM-DD
 ```
 
-### 2. Create Release Tag
+### 2. Create and Push
 
 ```powershell
 git add VERSION CHANGELOG.md
@@ -32,55 +46,18 @@ git push origin main
 git push origin v1.1.0
 ```
 
-### 3. Create GitHub Release
+GitHub Actions will automatically:
+- Create the release archive
+- Upload it to GitHub Releases
+- Make it available for `cvm selfupdate`
 
-The release will be automatically created via GitHub Actions when the tag is pushed.
+## Version Format
 
-**Or manually from GitHub:**
+cvm uses [Semantic Versioning](https://semver.org/):
 
-1. Go to [Releases](https://github.com/adriholman/cvm-windows/releases)
-2. Click "Draft a new release"
-3. Select the tag you just pushed
-4. Add release notes from CHANGELOG.md
-5. Upload `cvm-release.zip` as an asset
-
-### 4. Create Release Archive
-
-Before the GitHub Actions creates the release, prepare the zip file locally:
-
-```powershell
-# Create a temporary directory
-$tempDir = "cvm-release-1.1.0"
-New-Item -ItemType Directory -Path $tempDir
-
-# Copy files
-Copy-Item -Path "bin/cvm.ps1" -Destination $tempDir
-Copy-Item -Path "bin/composer.ps1" -Destination $tempDir
-Copy-Item -Path "bin/cvm-common.psm1" -Destination $tempDir
-Copy-Item -Path "VERSION" -Destination $tempDir
-Copy-Item -Path "CHANGELOG.md" -Destination $tempDir
-Copy-Item -Path "README.md" -Destination $tempDir
-
-# Create zip (requires .NET 4.5+)
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    (Resolve-Path $tempDir).Path,
-    "cvm-release.zip",
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $false
-)
-
-# Cleanup
-Remove-Item -Recurse -Force $tempDir
-```
-
-### 5. Announce Update
-
-After release is published:
-- Add release notes to GitHub discussions or wiki
-- Update any relevant documentation
-- (Optional) Post in community channels
-
-## Verifying a Release
+- **MAJOR**: Breaking changes (e.g., 1.0.0 → 2.0.0)
+- **MINOR**: New features, backward compatible (e.g., 1.0.0 → 1.1.0)
+- **PATCH**: Bug fixes (e.g., 1.0.0 → 1.0.1)
 
 Users can verify the release works with:
 
