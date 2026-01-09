@@ -8,13 +8,13 @@ if (-not (Test-Path -LiteralPath $modulePath)) {
     Write-Error "cvm-common.psm1 not found next to composer.ps1"
     exit 1
 }
-Import-Module -Force $modulePath
+Import-Module -Force -DisableNameChecking $modulePath
 Set-CvmContext -Prefix '[composer]'
 
 $version = Resolve-DesiredVersion
-$phar = Ensure-VersionInstalled $version
+$phar = Install-ComposerVersionIfNeeded $version
 $php = Get-PhpExe
-Assert-PhpVersionSupported -PhpExe $php -composerSpec $version
+Test-PhpVersionSupport -PhpExe $php -composerSpec $version
 Write-VerboseMsg "Using Composer $version" '[composer]'
 
 & $php $phar @Args

@@ -13,9 +13,9 @@
 - 🔐 **SHA256 verification**: Verifies checksums for exact versions (security)
 - ⚡ **Transparent proxy**: Run `cvm install 2` then `cvm require vendor/package` without thinking
 - 🛠️ **Clean PATH**: Single `cvm.ps1` script in your PATH, no system pollution
-- 📊 **Descargas con progreso**: Muestra tamaño aproximado y barra de progreso (silenciable con `--quiet`)
-- 🧭 **Caches flexibles**: Usa `%USERPROFILE%\.cvm` por defecto o `%LOCALAPPDATA%\cvm`/`--cache-root`
-- 🧹 **Mantenimiento rápido**: `cvm clean` para purgar versiones no usadas y `cvm selfupdate` para refrescar scripts
+- 📊 **Progress downloads**: Shows approximate file size and progress bar (can be silenced with `--quiet`)
+- 🧭 **Flexible caches**: Uses `%USERPROFILE%\.cvm` by default or `%LOCALAPPDATA%\cvm`/`--cache-root`
+- 🧹 **Quick maintenance**: `cvm clean` to purge unused versions and `cvm selfupdate` to refresh scripts
 
 ## 📦 Installation
 
@@ -108,13 +108,13 @@ Tip: `cvm` is for version management: `cvm install <version>`, `cvm default <ver
 
 ### Global options
 
-Puedes anteponer opciones a cualquier comando `cvm`:
+You can prepend options to any `cvm` command:
 
-- `--quiet` (`-q`): menos salida (también con `CVM_QUIET=1`).
-- `--verbose` (`-v`): más detalle (también `CVM_VERBOSE=1`).
-- `--no-verify`: omite checksum (útil offline; también `CVM_NO_VERIFY=1`).
-- `--cache-root <ruta>`: cache en ruta personalizada (o `CVM_CACHE_ROOT`).
-- `--use-localappdata`: usa `%LOCALAPPDATA%\cvm` en vez de `%USERPROFILE%\.cvm`.
+- `--quiet` (`-q`): Reduce output (also via `CVM_QUIET=1`)
+- `--verbose` (`-v`): Extra details (also `CVM_VERBOSE=1`)
+- `--no-verify`: Skip checksum verification (useful offline; also `CVM_NO_VERIFY=1`)
+- `--cache-root <path>`: Use custom cache path (or `CVM_CACHE_ROOT`)
+- `--use-localappdata`: Use `%LOCALAPPDATA%\cvm` instead of `%USERPROFILE%\.cvm`
 
 ## 🎯 Version Resolution
 
@@ -207,10 +207,10 @@ jobs:
                composer install --no-dev --no-interaction
 ```
 
-Notas:
-- El wrapper `composer` usa la resolución de versión de `cvm` (env, .composer-version, default).
-- Usa `--quiet`/`--verbose` con `cvm` para ajustar ruido en logs de CI.
-- Para caché en `%LOCALAPPDATA%`, añade `cvm --use-localappdata install 2`.
+Remarks:
+- The `composer` wrapper uses cvm's version resolution (environment, .composer-version, default)
+- Use `--quiet`/`--verbose` with `cvm` to control noise in CI logs
+- For cache in `%LOCALAPPDATA%`, use: `cvm --use-localappdata install 2`
 
 ## 🗑️ Uninstallation
 
@@ -243,14 +243,14 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cvm"
 
 ## 🐛 Troubleshooting
 
-| Error / síntoma | Posible causa | Solución rápida |
-|-----------------|---------------|-----------------|
-| `PHP not found in PATH` | PHP CLI no instalado o fuera de PATH | Instala `php` (`winget install --id PHP.PHP`) y verifica con `php -v`. |
-| `PHP X.Y too old for Composer Z` | PHP menor al requerido por Composer 2 (>=7.2.5) o 1 (>=5.3.2) | Actualiza PHP o usa `cvm default 1` si necesitas Composer 1 con PHP antiguo. |
-| `Invalid checksum` | Descarga corrupta | `Remove-Item "$env:USERPROFILE\.cvm\versions\<v>" -Recurse -Force; cvm install <v>`. Usa `--no-verify` solo en offline. |
-| Descarga lenta/timeout | Red lenta o mirror caído | Reintenta; usa `--use-localappdata` para caches locales; hay fallback a mirrors y reintentos. |
-| No se limpia espacio | Hay versiones en uso | Ejecuta `cvm clean --all` (o `--keep 2`) para forzar limpieza. |
-| Aliases/command not found tras instalar | PATH no recargado | Abre una nueva terminal o recarga `$PROFILE`. |
+| Error / Symptom | Probable Cause | Quick Fix |
+|-----------------|----------------|-----------|
+| `PHP not found in PATH` | PHP CLI not installed or not in PATH | Install PHP (`winget install --id PHP.PHP`) and verify with `php -v` |
+| `PHP X.Y too old for Composer Z` | PHP version below Composer requirements (Composer 2: ≥7.2.5, Composer 1: ≥5.3.2) | Upgrade PHP or use `cvm default 1` if you need Composer 1 with older PHP |
+| `Invalid checksum` | Corrupted download | `Remove-Item "$env:USERPROFILE\.cvm\versions\<v>" -Recurse -Force; cvm install <v>`. Use `--no-verify` only offline |
+| Slow download / timeout | Slow network or mirror down | Retry; use `--use-localappdata` for local cache; automatic fallback to mirrors and retries |
+| Space not cleaned | Versions in use | Run `cvm clean --all` (or `--keep 2`) to force cleanup |
+| Aliases/commands not found after install | PATH not reloaded | Open a new terminal or reload `$PROFILE` |
 
 ## 🤝 Contributing
 

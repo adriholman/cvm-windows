@@ -17,7 +17,7 @@ if (-not (Test-Path -LiteralPath $modulePath)) {
     Write-Error "cvm-common.psm1 not found next to cvm.ps1"
     exit 1
 }
-Import-Module -Force $modulePath
+Import-Module -Force -DisableNameChecking $modulePath
 
 function Parse-GlobalOptions {
     param([string[]]$InputArgs)
@@ -109,7 +109,7 @@ function Cmd-Install([string]$version) {
         Write-Host "Usage: cvm install <1|2|stable|preview|x.y.z>" -ForegroundColor Yellow
         exit 1
     }
-    Ensure-VersionInstalled $version | Out-Null
+    Install-ComposerVersionIfNeeded $version | Out-Null
     Write-Info "Installation completed: $version"
 }
 
@@ -186,7 +186,7 @@ function Cmd-Version {
 function Cmd-SelfUpdate {
     $targetRoot = Get-CvmRoot
     $targetBin = Join-Path $targetRoot 'bin'
-    Ensure-Dir $targetBin
+    New-CvmDirectory $targetBin
 
     $files = @('cvm.ps1','composer.ps1','cvm-common.psm1')
     foreach ($f in $files) {
@@ -293,9 +293,9 @@ switch ($cmd) {
     { $_ -in @('help', '--help', '-h', '-?') } { Show-Help; exit 0 }
     default {
         $version = Resolve-DesiredVersion
-        $phar = Ensure-VersionInstalled $version
+        $phar = Install-ComposerVersionIfNeeded $version
         $php = Get-PhpExe
-        Assert-PhpVersionSupported -PhpExe $php -composerSpec $version
+        Test-PhpVersionSupport -PhpExe $php -composerSpec $version
         Write-Info "Using Composer $version"
         & $php $phar @Args
         exit $LASTEXITCODE
