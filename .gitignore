@@ -32,8 +32,7 @@ $RECYCLE.BIN/
 *.swo
 *~
 
-# PowerShell transcripts y módulos compilados
+# PowerShell transcripts (no ignorar módulos fuente .psm1 - son código del proyecto)
 PowerShell_transcript.*
 *.psd1
-*.psm1
 
