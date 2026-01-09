@@ -131,10 +131,10 @@ function Cmd-Default([string]$version) {
 }
 
 function Cmd-List {
-    $installed = Get-InstalledVersions
+    $installed = @(Get-InstalledVersions)
     $default = Get-DefaultVersion
 
-    if (-not $installed -or $installed.Count -eq 0) {
+    if ($installed.Count -eq 0) {
         Write-Info "No versions installed"
         Write-Host "Run: cvm install <version>" -ForegroundColor Yellow
         return
