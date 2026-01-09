@@ -1,0 +1,70 @@
+name: Create Release
+
+on:
+  push:
+    paths:
+      - 'VERSION'
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $version = Get-Content VERSION -Raw
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+      
+      - name: Create release archive
+        shell: pwsh
+        run: |
+          $version = Get-Content VERSION -Raw
+          $tempDir = "cvm-release-$version"
+          New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+          
+          # Copy files
+          Copy-Item -Path "bin/cvm.ps1" -Destination $tempDir
+          Copy-Item -Path "bin/composer.ps1" -Destination $tempDir
+          Copy-Item -Path "bin/cvm-common.psm1" -Destination $tempDir
+          Copy-Item -Path "VERSION" -Destination $tempDir
+          Copy-Item -Path "CHANGELOG.md" -Destination $tempDir
+          Copy-Item -Path "README.md" -Destination $tempDir
+          
+          # Create zip
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory(
+              (Resolve-Path $tempDir).Path,
+              "cvm-release.zip",
+              [System.IO.Compression.CompressionLevel]::Optimal,
+              $false
+          )
+          
+          # Cleanup
+          Remove-Item -Recurse -Force $tempDir
+          Write-Output "Release archive created: cvm-release.zip"
+      
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          release_name: Release v${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+      
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./cvm-release.zip
+          asset_name: cvm-release.zip
+          asset_content_type: application/zip

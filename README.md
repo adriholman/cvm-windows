@@ -22,7 +22,7 @@
 ### 1. Clone the repository
 
 ```powershell
-git clone https://github.com/adriholman/cvm.git
+git clone https://github.com/adriholman/cvm-windows.git
 cd cvm
 ```
 
@@ -187,6 +187,39 @@ cvm --version                # Shows preview version
 cvm selfupdate              # Updates Composer (within preview version)
 Remove-Item Env:\CVM_VERSION # Return to normal version
 ```
+
+## 🚀 Updating cvm
+
+### Automatic updates
+
+Simply run:
+
+```powershell
+cvm selfupdate
+```
+
+This command will:
+1. Check the latest release on GitHub
+2. Download and extract the release files
+3. Update your local installation in `~/.cvm/bin/`
+4. Update the VERSION file
+
+### Check for updates without installing
+
+```powershell
+cvm selfupdate --check
+```
+
+This shows if a newer version is available without installing it.
+
+### Manual update
+
+If automatic update fails, you can manually download releases from:
+[github.com/adriholman/cvm-windows/releases](https://github.com/adriholman/cvm-windows/releases)
+
+Then run `.\scripts\setup-path.ps1 -Action install` to reinstall.
+
+---
 
 ## 🏭 CI usage (GitHub Actions example)
 

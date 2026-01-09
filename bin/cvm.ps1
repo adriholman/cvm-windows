@@ -69,14 +69,14 @@ function Show-Help {
 cvm - Composer Version Manager for Windows
 
 USAGE:
-  cvm [global-options] install <version>    Install a Composer version
-  cvm [global-options] default <version>    Set the global default version
-  cvm [global-options] list                 List installed versions
-  cvm [global-options] which                Show current version and its source
-  cvm [global-options] version              Show cvm version
-  cvm [global-options] selfupdate           Copy scripts + VERSION to cache bin
+  cvm [global-options] install <version>         Install a Composer version
+  cvm [global-options] default <version>         Set the global default version
+  cvm [global-options] list                      List installed versions
+  cvm [global-options] which                     Show current version and its source
+  cvm [global-options] version                   Show cvm version
+  cvm [global-options] selfupdate [--check]      Update to latest version (--check to see available)
   cvm [global-options] clean [--all] [--keep v]  Remove cached versions
-  cvm [global-options] <args>               Run composer with resolved version
+  cvm [global-options] <args>                    Run composer with resolved version
 
 GLOBAL OPTIONS:
   --quiet | -q          Reduce output (also respects $env:CVM_QUIET=1)
@@ -97,7 +97,7 @@ CONFIGURATION:
   Project file: .composer-version
   Global default: %USERPROFILE%\.cvm\config.json (or custom cache root)
 
-For more info: https://github.com/adriholman/cvm
+For more info: https://github.com/adriholman/cvm-windows
 '@ | Write-Host
 }
 
@@ -184,28 +184,103 @@ function Cmd-Version {
 }
 
 function Cmd-SelfUpdate {
-    $targetRoot = Get-CvmRoot
-    $targetBin = Join-Path $targetRoot 'bin'
-    New-CvmDirectory $targetBin
+    param(
+        [switch]$Check
+    )
 
-    $files = @('cvm.ps1','composer.ps1','cvm-common.psm1')
-    foreach ($f in $files) {
-        $src = Join-Path $PSScriptRoot $f
-        if (-not (Test-Path -LiteralPath $src)) { throw "$f not found next to cvm.ps1" }
-        $dst = Join-Path $targetBin $f
-        Copy-Item -LiteralPath $src -Destination $dst -Force
-        Write-VerboseMsg "Copied $f -> $dst"
+    # Get current version
+    $versionFile = Join-Path $PSScriptRoot '..\VERSION'
+    $currentVersion = if (Test-Path -LiteralPath $versionFile) { 
+        (Get-Content -LiteralPath $versionFile -Raw).Trim() 
+    } else { 
+        '0.0.0' 
     }
 
-    $versionSrc = Join-Path $PSScriptRoot '..\VERSION'
-    if (Test-Path -LiteralPath $versionSrc) {
-        $versionDst = Join-Path $targetRoot 'VERSION'
-        Copy-Item -LiteralPath $versionSrc -Destination $versionDst -Force
-        Write-VerboseMsg "Copied VERSION -> $versionDst"
-    }
+    Write-Info "Checking for updates... (current: $currentVersion)"
 
-    Write-Info "selfupdate completed. Restart shell to ensure PATH reloads."
+    # Fetch latest release from GitHub
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $apiUrl = 'https://api.github.com/repos/adriholman/cvm-windows/releases/latest'
+    
+    try {
+        $response = Invoke-RestMethod -Uri $apiUrl -TimeoutSec 10 -ErrorAction Stop
+        $latestVersion = $response.tag_name -replace '^v', ''
+        $downloadUrl = $response.assets | Where-Object { $_.name -eq 'cvm-release.zip' } | Select-Object -ExpandProperty browser_download_url
+        
+        if (-not $downloadUrl) {
+            Write-Err "Latest release found but no cvm-release.zip asset found"
+            return
+        }
+
+        Write-Info "Latest available: $latestVersion"
+        
+        # Compare versions
+        try {
+            $current = [version]$currentVersion
+            $latest = [version]$latestVersion
+            if ($latest -le $current) {
+                Write-Info "You are already running the latest version ($currentVersion)"
+                return
+            }
+        } catch {
+            Write-VerboseMsg "Could not compare versions as [version] objects, doing string comparison"
+        }
+
+        if ($Check) {
+            Write-Host "Update available: $currentVersion -> $latestVersion" -ForegroundColor Yellow
+            Write-Host "Run: cvm selfupdate (without --check)" -ForegroundColor Cyan
+            return
+        }
+
+        # Download and extract release
+        Write-Info "Downloading cvm $latestVersion from GitHub..."
+        $tempZip = Join-Path ([System.IO.Path]::GetTempPath()) "cvm-release-$latestVersion.zip"
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cvm-extract-$latestVersion"
+
+        try {
+            # Download
+            Invoke-DownloadFile -Url $downloadUrl -Destination $tempZip
+            
+            # Extract
+            if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force }
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($tempZip, $tempDir)
+            
+            # Install files
+            $targetRoot = Get-CvmRoot
+            $targetBin = Join-Path $targetRoot 'bin'
+            New-CvmDirectory $targetBin
+
+            $files = @('cvm.ps1', 'composer.ps1', 'cvm-common.psm1')
+            foreach ($f in $files) {
+                $src = Join-Path $tempDir $f
+                if (-not (Test-Path -LiteralPath $src)) {
+                    throw "File $f not found in release archive"
+                }
+                $dst = Join-Path $targetBin $f
+                Copy-Item -LiteralPath $src -Destination $dst -Force
+                Write-VerboseMsg "Updated $f"
+            }
+
+            # Update VERSION file
+            $versionDst = Join-Path $targetRoot 'VERSION'
+            Set-Content -LiteralPath $versionDst -Value $latestVersion -Encoding UTF8 -NoNewline
+            Write-VerboseMsg "Updated VERSION to $latestVersion"
+
+            Write-Info "Update successful! Restart your shell to load the new version."
+            Write-Host "New version: $latestVersion" -ForegroundColor Green
+
+        } finally {
+            # Cleanup
+            if (Test-Path -LiteralPath $tempZip) { Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue }
+            if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+
+    } catch {
+        Write-Err "Could not check for updates: $($_.Exception.Message)"
+        Write-Host "You can manually download releases from: https://github.com/adriholman/cvm-windows/releases" -ForegroundColor Yellow
+    }
 }
+
 
 function Cmd-Clean {
     param(
