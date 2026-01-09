@@ -2,10 +2,11 @@ name: Create Release
 
 on:
   push:
-    paths:
-      - 'VERSION'
-    branches:
-      - main
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -13,17 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Read version
+      - name: Get version from tag
         id: version
         shell: pwsh
         run: |
-          $version = Get-Content VERSION -Raw
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
       
       - name: Create release archive
         shell: pwsh
         run: |
-          $version = Get-Content VERSION -Raw
+          $version = "${{ steps.version.outputs.VERSION }}"
           $tempDir = "cvm-release-$version"
           New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
           
@@ -49,22 +52,15 @@ jobs:
           Write-Output "Release archive created: cvm-release.zip"
       
       - name: Create GitHub Release
-        uses: actions/create-release@v1
-        id: create_release
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ steps.version.outputs.VERSION }}
-          release_name: Release v${{ steps.version.outputs.VERSION }}
-          draft: false
-          prerelease: false
-      
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./cvm-release.zip
-          asset_name: cvm-release.zip
-          asset_content_type: application/zip
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $tag = "${{ steps.version.outputs.TAG }}"
+          
+          # Create release using GitHub CLI
+          gh release create $tag `
+            --title "Release $tag" `
+            --notes "See CHANGELOG.md for details" `
+            cvm-release.zip
