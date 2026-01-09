@@ -13,6 +13,9 @@
 - 🔐 **SHA256 verification**: Verifies checksums for exact versions (security)
 - ⚡ **Transparent proxy**: Run `cvm install 2` then `cvm require vendor/package` without thinking
 - 🛠️ **Clean PATH**: Single `cvm.ps1` script in your PATH, no system pollution
+- 📊 **Descargas con progreso**: Muestra tamaño aproximado y barra de progreso (silenciable con `--quiet`)
+- 🧭 **Caches flexibles**: Usa `%USERPROFILE%\.cvm` por defecto o `%LOCALAPPDATA%\cvm`/`--cache-root`
+- 🧹 **Mantenimiento rápido**: `cvm clean` para purgar versiones no usadas y `cvm selfupdate` para refrescar scripts
 
 ## 📦 Installation
 
@@ -103,6 +106,16 @@ composer install --no-dev
 
 Tip: `cvm` is for version management: `cvm install <version>`, `cvm default <version>`, `cvm which`, `cvm list`.
 
+### Global options
+
+Puedes anteponer opciones a cualquier comando `cvm`:
+
+- `--quiet` (`-q`): menos salida (también con `CVM_QUIET=1`).
+- `--verbose` (`-v`): más detalle (también `CVM_VERBOSE=1`).
+- `--no-verify`: omite checksum (útil offline; también `CVM_NO_VERIFY=1`).
+- `--cache-root <ruta>`: cache en ruta personalizada (o `CVM_CACHE_ROOT`).
+- `--use-localappdata`: usa `%LOCALAPPDATA%\cvm` en vez de `%USERPROFILE%\.cvm`.
+
 ## 🎯 Version Resolution
 
 cvm resolves the version to use in the following priority order:
@@ -175,6 +188,30 @@ cvm selfupdate              # Updates Composer (within preview version)
 Remove-Item Env:\CVM_VERSION # Return to normal version
 ```
 
+## 🏭 CI usage (GitHub Actions example)
+
+```yaml
+jobs:
+   build:
+      runs-on: windows-latest
+      steps:
+         - uses: actions/checkout@v4
+         - name: Install cvm
+            shell: pwsh
+            run: .\scripts\setup-path.ps1 -Action install
+         - name: Ensure Composer 2 and install deps
+            shell: pwsh
+            run: |
+               cvm install 2
+               cvm which
+               composer install --no-dev --no-interaction
+```
+
+Notas:
+- El wrapper `composer` usa la resolución de versión de `cvm` (env, .composer-version, default).
+- Usa `--quiet`/`--verbose` con `cvm` para ajustar ruido en logs de CI.
+- Para caché en `%LOCALAPPDATA%`, añade `cvm --use-localappdata install 2`.
+
 ## 🗑️ Uninstallation
 
 ```powershell
@@ -201,38 +238,19 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cvm"
 | `cvm which` | Shows current resolution (version and path) |
 | `cvm list` | Lists locally installed versions |
 | `cvm <other-args>` | Proxy to composer - any other argument is forwarded |
+| `cvm selfupdate` | Copies the local scripts and VERSION into the cache bin |
+| `cvm clean [--all] [--keep <v>]` | Removes cached versions (keeps default/active unless `--all`) |
 
 ## 🐛 Troubleshooting
 
-### Error: "PHP not found in PATH"
-
-Install PHP and make sure `php.exe` is in your PATH:
-
-```powershell
-winget install --id PHP.PHP
-# Or download from https://windows.php.net/download/
-```
-
-Verify with: `php -v`
-
-### Error: "Invalid checksum"
-
-The download may be corrupted. Remove the version and reinstall:
-
-```powershell
-Remove-Item "$env:USERPROFILE\.cvm\versions\<version>" -Recurse -Force
-cvm install <version>
-```
-
-### Aliases don't work
-
-Reload your PowerShell profile:
-
-```powershell
-. $PROFILE
-```
-
-Or open a new terminal.
+| Error / síntoma | Posible causa | Solución rápida |
+|-----------------|---------------|-----------------|
+| `PHP not found in PATH` | PHP CLI no instalado o fuera de PATH | Instala `php` (`winget install --id PHP.PHP`) y verifica con `php -v`. |
+| `PHP X.Y too old for Composer Z` | PHP menor al requerido por Composer 2 (>=7.2.5) o 1 (>=5.3.2) | Actualiza PHP o usa `cvm default 1` si necesitas Composer 1 con PHP antiguo. |
+| `Invalid checksum` | Descarga corrupta | `Remove-Item "$env:USERPROFILE\.cvm\versions\<v>" -Recurse -Force; cvm install <v>`. Usa `--no-verify` solo en offline. |
+| Descarga lenta/timeout | Red lenta o mirror caído | Reintenta; usa `--use-localappdata` para caches locales; hay fallback a mirrors y reintentos. |
+| No se limpia espacio | Hay versiones en uso | Ejecuta `cvm clean --all` (o `--keep 2`) para forzar limpieza. |
+| Aliases/command not found tras instalar | PATH no recargado | Abre una nueva terminal o recarga `$PROFILE`. |
 
 ## 🤝 Contributing
 

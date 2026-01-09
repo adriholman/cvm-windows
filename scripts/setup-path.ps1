@@ -66,26 +66,19 @@ switch ($Action) {
     'install' {
         Ensure-Dir $TargetBin
         
-        # Copy script from repo to user directory
-        $repoScript = Join-Path $PSScriptRoot '..\bin\cvm.ps1'
-        if (-not (Test-Path -LiteralPath $repoScript)) {
-            Write-Error "bin\cvm.ps1 not found in repository. Run this script from the repo root."
-            exit 1
+        # Copy scripts from repo to user directory
+        $repoBin = Join-Path $PSScriptRoot '..\bin'
+        $files = @('cvm.ps1','composer.ps1','cvm-common.psm1')
+        foreach ($f in $files) {
+            $src = Join-Path $repoBin $f
+            if (-not (Test-Path -LiteralPath $src)) {
+                Write-Error "bin\$f not found in repository. Run this script from the repo root."
+                exit 1
+            }
+            $dst = Join-Path $TargetBin $f
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+            Write-Info "Copied bin\$f -> $dst"
         }
-        
-        $targetScript = Join-Path $TargetBin 'cvm.ps1'
-        Copy-Item -LiteralPath $repoScript -Destination $targetScript -Force
-        Write-Info "Copied bin\cvm.ps1 -> $targetScript"
-
-        # Also deploy composer launcher
-        $repoComposer = Join-Path $PSScriptRoot '..\bin\composer.ps1'
-        if (-not (Test-Path -LiteralPath $repoComposer)) {
-            Write-Error "bin\composer.ps1 not found in repository."
-            exit 1
-        }
-        $targetComposer = Join-Path $TargetBin 'composer.ps1'
-        Copy-Item -LiteralPath $repoComposer -Destination $targetComposer -Force
-        Write-Info "Copied bin\composer.ps1 -> $targetComposer"
         
         # Copy VERSION file
         $repoVersion = Join-Path $PSScriptRoot '..\VERSION'

@@ -6,287 +6,100 @@
     Supports channels (1, 2, stable, preview) and exact versions (e.g., 2.7.1).
 .PARAMETER Args
     Arguments passed to the script
-.EXAMPLE
-    cvm install 2
-    cvm default stable
-    cvm which
-    cvm require vendor/package
 #>
-param(
-    [Parameter(ValueFromRemainingArguments)]
-    [string[]]$Args
-)
+param([Parameter(ValueFromRemainingArguments)][string[]]$Args)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$Script:DownloadTimeoutSec = 45
-$Script:DownloadRetries   = 3
-$Script:RetryDelaySec     = 3
-
-#region Helper Functions
-
-function Write-Info($msg) {
-    Write-Host "[cvm] $msg" -ForegroundColor Cyan
+$modulePath = Join-Path $PSScriptRoot 'cvm-common.psm1'
+if (-not (Test-Path -LiteralPath $modulePath)) {
+    Write-Error "cvm-common.psm1 not found next to cvm.ps1"
+    exit 1
 }
+Import-Module -Force $modulePath
 
-function Write-Err($msg) {
-    Write-Host "[cvm] ERROR: $msg" -ForegroundColor Red
-}
+function Parse-GlobalOptions {
+    param([string[]]$InputArgs)
+    $quiet = $false
+    $verbose = $false
+    $skipVerify = $false
+    $cacheRoot = $null
+    $useLocalApp = $false
+    $rest = @()
 
-function Invoke-WithRetry {
-    param(
-        [Parameter(Mandatory)][scriptblock]$Action,
-        [Parameter(Mandatory)][string]$Description,
-        [int]$MaxAttempts = $Script:DownloadRetries,
-        [int]$DelaySeconds = $Script:RetryDelaySec
-    )
-
-    $attempt = 0
-    $lastError = $null
-
-    while ($attempt -lt $MaxAttempts) {
-        $attempt++
-        try {
-            return & $Action
-        } catch {
-            $lastError = $_.Exception.Message
-            if ($attempt -ge $MaxAttempts) { break }
-            Start-Sleep -Seconds $DelaySeconds
-        }
-    }
-
-    throw "Failed $Description after $MaxAttempts attempts. Last error: $lastError"
-}
-
-function Ensure-Dir($path) {
-    if (-not (Test-Path -LiteralPath $path)) {
-        [void](New-Item -ItemType Directory -Path $path -Force)
-    }
-}
-
-function Get-CvmRoot {
-    Join-Path $env:USERPROFILE '.cvm'
-}
-
-function Get-VersionsDir {
-    Join-Path (Get-CvmRoot) 'versions'
-}
-
-function Get-ConfigPath {
-    Join-Path (Get-CvmRoot) 'config.json'
-}
-
-function Get-DefaultVersion {
-    $cfg = Get-ConfigPath
-    if (Test-Path -LiteralPath $cfg) {
-        try {
-            $json = Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
-            if ($json.default) { return [string]$json.default }
-        } catch {}
-    }
-    return 'stable'
-}
-
-function Set-DefaultVersion([string]$version) {
-    $root = Get-CvmRoot
-    Ensure-Dir $root
-    $cfg = Get-ConfigPath
-    @{ default = $version } | ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding UTF8
-    Write-Info "Default version set: $version"
-}
-
-function Find-ComposerVersionFile {
-    $dir = (Get-Location).Path
-    while ($true) {
-        $file = Join-Path $dir '.composer-version'
-        if (Test-Path -LiteralPath $file) {
-            $content = (Get-Content -LiteralPath $file -Raw).Trim()
-            if ($content) { return $content }
-        }
-        $parent = Split-Path $dir -Parent
-        if (-not $parent -or $parent -eq $dir) { break }
-        $dir = $parent
-    }
-    return $null
-}
-
-function Resolve-DesiredVersion {
-    # 1. Variable de entorno
-    if ($env:CVM_VERSION) { return $env:CVM_VERSION.Trim() }
-    
-    # 2. Archivo .composer-version
-    $fileVersion = Find-ComposerVersionFile
-    if ($fileVersion) { return $fileVersion }
-    
-    # 3. Default global
-    return Get-DefaultVersion
-}
-
-function Get-DownloadUrl([string]$version) {
-    switch -Regex ($version) {
-        '^1$'                   { return 'https://getcomposer.org/download/latest-1.x/composer.phar' }
-        '^2$'                   { return 'https://getcomposer.org/download/latest-2.x/composer.phar' }
-        '^stable$'              { return 'https://getcomposer.org/download/latest-stable/composer.phar' }
-        '^preview$'             { return 'https://getcomposer.org/download/latest-preview/composer.phar' }
-        '^\d+\.\d+\.\d+$'       { return "https://getcomposer.org/download/$version/composer.phar" }
-        default { throw "Invalid version: '$version'. Use: 1, 2, stable, preview or x.y.z" }
-    }
-}
-
-function Get-DownloadEndpoints([string]$version) {
-    $primary = Get-DownloadUrl $version
-    $fallback = $null
-
-    switch -Regex ($version) {
-        '^1$'       { $fallback = 'https://getcomposer.org/composer-1.phar' }
-        '^2$'       { $fallback = 'https://getcomposer.org/composer-2.phar' }
-        '^stable$'  { $fallback = 'https://getcomposer.org/composer-stable.phar' }
-        '^preview$' { $fallback = 'https://getcomposer.org/composer-preview.phar' }
-        '^\d+\.\d+\.\d+$' { $fallback = "https://github.com/composer/composer/releases/download/$version/composer.phar" }
-    }
-
-    $shaPrimary = $null
-    $shaFallback = $null
-    if (Test-ExactVersion $version) {
-        $shaPrimary = $primary -replace 'composer\.phar$', 'composer.phar.sha256sum'
-        $shaFallback = if ($fallback) { $fallback -replace 'composer\.phar$', 'composer.phar.sha256sum' } else { $null }
-    }
-
-    $endpoints = @()
-    $endpoints += @{ Url = $primary; ShaUrl = $shaPrimary }
-    if ($fallback -and $fallback -ne $primary) {
-        $endpoints += @{ Url = $fallback; ShaUrl = $shaFallback }
-    }
-    return $endpoints
-}
-
-function Test-ExactVersion([string]$version) {
-    return $version -match '^\d+\.\d+\.\d+$'
-}
-
-function Get-PharPath([string]$version) {
-    Join-Path (Join-Path (Get-VersionsDir) $version) 'composer.phar'
-}
-
-function Invoke-DownloadFile {
-    param(
-        [Parameter(Mandatory)][string]$Url,
-        [Parameter(Mandatory)][string]$Destination,
-        [int]$TimeoutSec = $Script:DownloadTimeoutSec
-    )
-
-    try {
-        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
-        Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -TimeoutSec $TimeoutSec
-        if (-not (Test-Path -LiteralPath $Destination)) {
-            throw "Download completed without creating $Destination"
-        }
-    } catch {
-        $errMsg = $_.Exception.Message
-        if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue }
-        throw "Error downloading from ${Url}: $errMsg"
-    }
-}
-
-function Verify-Checksum {
-    param(
-        [Parameter(Mandatory)][string]$PharPath,
-        [Parameter(Mandatory)][string]$ShaUrl,
-        [Parameter(Mandatory)][string]$ShaDestination,
-        [int]$TimeoutSec = $Script:DownloadTimeoutSec
-    )
-
-    Invoke-DownloadFile -Url $ShaUrl -Destination $ShaDestination -TimeoutSec $TimeoutSec
-
-    $expected = (Get-Content -LiteralPath $ShaDestination -Raw).Split()[0].Trim()
-    $actual = (Get-FileHash -LiteralPath $PharPath -Algorithm SHA256).Hash.ToLowerInvariant()
-
-    if ($expected.ToLowerInvariant() -ne $actual) {
-        Remove-Item -LiteralPath $PharPath -Force -ErrorAction SilentlyContinue
-        throw "Invalid checksum. Expected: $expected, Actual: $actual"
-    }
-}
-
-function Download-ComposerArtifact {
-    param(
-        [Parameter(Mandatory)][string]$Version,
-        [Parameter(Mandatory)][string]$PharPath,
-        [Parameter(Mandatory)][string]$VersionDir
-    )
-
-    $endpoints = Get-DownloadEndpoints $Version
-    $lastError = $null
-
-    foreach ($endpoint in $endpoints) {
-        try {
-            Write-Info "Downloading $($endpoint.Url) ..."
-            Invoke-WithRetry -Description "download $Version" -Action { Invoke-DownloadFile -Url $endpoint.Url -Destination $PharPath -TimeoutSec $Script:DownloadTimeoutSec }
-
-            if ($endpoint.ShaUrl) {
-                $shaFile = Join-Path $VersionDir 'composer.phar.sha256sum'
-                Invoke-WithRetry -Description "download checksum for $Version" -Action { Verify-Checksum -PharPath $PharPath -ShaUrl $endpoint.ShaUrl -ShaDestination $shaFile -TimeoutSec $Script:DownloadTimeoutSec }
-                Write-Info "SHA256 checksum verified"
-            } else {
-                Write-Info "Channel version - checksum skipped"
+    $i = 0
+    while ($i -lt $InputArgs.Count) {
+        $arg = $InputArgs[$i]
+        switch ($arg) {
+            '--quiet' { $quiet = $true; $i++; continue }
+            '-q'      { $quiet = $true; $i++; continue }
+            '--verbose' { $verbose = $true; $i++; continue }
+            '-v'        { $verbose = $true; $i++; continue }
+            '--no-verify' { $skipVerify = $true; $i++; continue }
+            '--cache-root' {
+                if ($i + 1 -ge $InputArgs.Count) { throw "--cache-root requires a path" }
+                $cacheRoot = $InputArgs[$i + 1]
+                $i += 2
+                continue
             }
-
-            return
-        } catch {
-            $lastError = $_.Exception.Message
-            Write-Err "Attempt failed from $($endpoint.Url): $lastError"
-            if (Test-Path -LiteralPath $PharPath) { Remove-Item -LiteralPath $PharPath -Force -ErrorAction SilentlyContinue }
+            { $_ -in @('--use-localappdata','--use-localapp') } { $useLocalApp = $true; $i++; continue }
+            '--' { $rest += $InputArgs[($i + 1)..($InputArgs.Count - 1)]; break }
+            default { $rest += $InputArgs[$i..($InputArgs.Count - 1)]; break }
         }
+        if ($rest.Count -gt 0) { break }
     }
 
-    throw "Failed to download Composer $Version from all endpoints. Last error: $lastError"
-}
-
-function Install-ComposerVersion([string]$version) {
-    $versionsDir = Get-VersionsDir
-    Ensure-Dir $versionsDir
-    
-    $versionDir = Join-Path $versionsDir $version
-    Ensure-Dir $versionDir
-    
-    $pharPath = Join-Path $versionDir 'composer.phar'
-
-    if (Test-Path -LiteralPath $pharPath) {
-        Write-Info "Already installed: $pharPath"
-        return $pharPath
+    if ($rest.Count -eq 0 -and $i -lt $InputArgs.Count) {
+        $rest += $InputArgs[$i..($InputArgs.Count - 1)]
     }
 
-    Download-ComposerArtifact -Version $version -PharPath $pharPath -VersionDir $versionDir
-    Write-Info "Downloaded: $pharPath"
-    return $pharPath
-}
-
-function Ensure-VersionInstalled([string]$version) {
-    $phar = Get-PharPath $version
-    if (-not (Test-Path -LiteralPath $phar)) {
-        Write-Info "Installing version: $version"
-        $phar = Install-ComposerVersion $version
-    }
-    return $phar
-}
-
-function Get-PhpExe {
-    $php = 'php'
-    try {
-        $null = & $php -v 2>&1
-        return $php
-    } catch {
-        throw "PHP CLI not found in PATH. Install PHP and add it to PATH."
+    return [ordered]@{
+        Quiet = $quiet
+        Verbose = $verbose
+        SkipVerify = $skipVerify
+        CacheRoot = $cacheRoot
+        UseLocalAppData = $useLocalApp
+        Rest = $rest
     }
 }
 
-function Get-InstalledVersions {
-    $versionsDir = Get-VersionsDir
-    if (-not (Test-Path -LiteralPath $versionsDir)) { return @() }
-    Get-ChildItem -LiteralPath $versionsDir -Directory | Select-Object -ExpandProperty Name
-}
+function Show-Help {
+@'
+cvm - Composer Version Manager for Windows
 
-#endregion
+USAGE:
+  cvm [global-options] install <version>    Install a Composer version
+  cvm [global-options] default <version>    Set the global default version
+  cvm [global-options] list                 List installed versions
+  cvm [global-options] which                Show current version and its source
+  cvm [global-options] version              Show cvm version
+  cvm [global-options] selfupdate           Copy scripts + VERSION to cache bin
+  cvm [global-options] clean [--all] [--keep v]  Remove cached versions
+  cvm [global-options] <args>               Run composer with resolved version
+
+GLOBAL OPTIONS:
+  --quiet | -q          Reduce output (also respects $env:CVM_QUIET=1)
+  --verbose | -v        Extra logs (also $env:CVM_VERBOSE=1)
+  --no-verify           Skip checksum download/validation (or $env:CVM_NO_VERIFY=1)
+  --cache-root <path>   Use custom cache root (or $env:CVM_CACHE_ROOT)
+  --use-localappdata    Store cache under %LOCALAPPDATA%\cvm (or $env:CVM_USE_LOCALAPPDATA=1)
+
+SUPPORTED VERSIONS:
+  1        Latest Composer 1.x
+  2        Latest Composer 2.x
+  stable   Latest stable
+  preview  Latest preview/beta
+  x.y.z    Specific version (e.g., 2.7.1)
+
+CONFIGURATION:
+  Environment: $env:CVM_VERSION
+  Project file: .composer-version
+  Global default: %USERPROFILE%\.cvm\config.json (or custom cache root)
+
+For more info: https://github.com/adriholman/cvm
+'@ | Write-Host
+}
 
 #region Commands
 
@@ -296,8 +109,7 @@ function Cmd-Install([string]$version) {
         Write-Host "Usage: cvm install <1|2|stable|preview|x.y.z>" -ForegroundColor Yellow
         exit 1
     }
-    
-    Install-ComposerVersion $version | Out-Null
+    Ensure-VersionInstalled $version | Out-Null
     Write-Info "Installation completed: $version"
 }
 
@@ -307,28 +119,27 @@ function Cmd-Default([string]$version) {
         Write-Host "Usage: cvm default <1|2|stable|preview|x.y.z>" -ForegroundColor Yellow
         exit 1
     }
-    
-    # Verify version is installed before setting as default
+
     $phar = Get-PharPath $version
     if (-not (Test-Path -LiteralPath $phar)) {
         Write-Err "Version '$version' is not installed"
         Write-Host "Install it first: cvm install $version" -ForegroundColor Yellow
         exit 1
     }
-    
+
     Set-DefaultVersion $version
 }
 
 function Cmd-List {
     $installed = Get-InstalledVersions
     $default = Get-DefaultVersion
-    
+
     if (-not $installed -or $installed.Count -eq 0) {
         Write-Info "No versions installed"
         Write-Host "Run: cvm install <version>" -ForegroundColor Yellow
         return
     }
-    
+
     Write-Info "Installed versions:"
     foreach ($v in ($installed | Sort-Object)) {
         if ($v -eq $default) {
@@ -343,15 +154,15 @@ function Cmd-Which {
     $version = Resolve-DesiredVersion
     $phar = Get-PharPath $version
     $exists = Test-Path -LiteralPath $phar
-    
-    $source = if ($env:CVM_VERSION) { 
-        "env:CVM_VERSION" 
-    } elseif (Find-ComposerVersionFile) { 
-        ".composer-version" 
-    } else { 
-        "default global" 
+
+    $source = if ($env:CVM_VERSION) {
+        "env:CVM_VERSION"
+    } elseif (Find-ComposerVersionFile) {
+        ".composer-version"
+    } else {
+        "default global"
     }
-    
+
     [PSCustomObject]@{
         Source         = $source
         VersionSpec    = $version
@@ -372,46 +183,81 @@ function Cmd-Version {
     }
 }
 
-function Show-Help {
-    @'
-cvm - Composer Version Manager for Windows
+function Cmd-SelfUpdate {
+    $targetRoot = Get-CvmRoot
+    $targetBin = Join-Path $targetRoot 'bin'
+    Ensure-Dir $targetBin
 
-USAGE:
-  cvm install <version>    Install a Composer version
-  cvm default <version>    Set the global default version
-  cvm list                 List installed versions
-  cvm which                Show current version and its source
-  cvm version              Show cvm version
-  cvm <args>               Run composer with resolved version
+    $files = @('cvm.ps1','composer.ps1','cvm-common.psm1')
+    foreach ($f in $files) {
+        $src = Join-Path $PSScriptRoot $f
+        if (-not (Test-Path -LiteralPath $src)) { throw "$f not found next to cvm.ps1" }
+        $dst = Join-Path $targetBin $f
+        Copy-Item -LiteralPath $src -Destination $dst -Force
+        Write-VerboseMsg "Copied $f -> $dst"
+    }
 
-SUPPORTED VERSIONS:
-  1        - Latest Composer 1.x version
-  2        - Latest Composer 2.x version
-  stable   - Latest stable version
-  preview  - Latest preview/beta version
-  x.y.z    - Specific version (e.g., 2.7.1)
+    $versionSrc = Join-Path $PSScriptRoot '..\VERSION'
+    if (Test-Path -LiteralPath $versionSrc) {
+        $versionDst = Join-Path $targetRoot 'VERSION'
+        Copy-Item -LiteralPath $versionSrc -Destination $versionDst -Force
+        Write-VerboseMsg "Copied VERSION -> $versionDst"
+    }
 
-EXAMPLES:
-  cvm install 2
-  cvm default stable
-  cvm require symfony/console
-  cvm --version
+    Write-Info "selfupdate completed. Restart shell to ensure PATH reloads."
+}
 
-CONFIGURATION:
-  Environment variable: $env:CVM_VERSION
-  Project file:         .composer-version
-  Global default:       %USERPROFILE%\.cvm\config.json
+function Cmd-Clean {
+    param(
+        [switch]$All,
+        [string[]]$Keep
+    )
 
-For more information: https://github.com/adriholman/cvm
-'@ | Write-Host
+    $installed = Get-InstalledVersions
+    if (-not $installed -or $installed.Count -eq 0) {
+        Write-Info "No cached versions to clean"
+        return
+    }
+
+    $keepSet = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($k in $Keep) { $null = $keepSet.Add($k) }
+
+    if (-not $All) {
+        $null = $keepSet.Add((Get-DefaultVersion))
+        $null = $keepSet.Add((Resolve-DesiredVersion))
+    }
+
+    $removed = @()
+    $freed = 0L
+    foreach ($v in $installed) {
+        if ($keepSet.Contains($v)) { continue }
+        $dir = Split-Path (Get-PharPath $v) -Parent
+        if (Test-Path -LiteralPath $dir) {
+            $size = (Get-ChildItem -LiteralPath $dir -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+            Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+            $removed += $v
+            if ($size) { $freed += [int64]$size }
+        }
+    }
+
+    if ($removed.Count -eq 0) {
+        Write-Info "Nothing to clean"
+    } else {
+        Write-Info "Removed: $($removed -join ', ')"
+        if ($freed -gt 0) { Write-Info "Freed $(Format-Size $freed)" }
+    }
 }
 
 #endregion
 
 #region Main
 
+if (-not $Args) { $Args = @() }
+$parsed = Parse-GlobalOptions $Args
+Set-CvmContext -Quiet:$parsed.Quiet -Verbose:$parsed.Verbose -SkipVerify:$parsed.SkipVerify -CacheRoot $parsed.CacheRoot -UseLocalAppData:$parsed.UseLocalAppData -Prefix '[cvm]'
+$Args = $parsed.Rest
+
 if (-not $Args -or $Args.Count -eq 0) {
-    # No arguments, show help
     Show-Help
     exit 0
 }
@@ -419,38 +265,37 @@ if (-not $Args -or $Args.Count -eq 0) {
 $cmd = $Args[0].ToLowerInvariant()
 
 switch ($cmd) {
-    'install' {
-        Cmd-Install -version $Args[1]
+    'install' { Cmd-Install -version $Args[1]; exit 0 }
+    'default' { Cmd-Default -version $Args[1]; exit 0 }
+    'list'    { Cmd-List; exit 0 }
+    'which'   { Cmd-Which; exit 0 }
+    'version' { Cmd-Version; exit 0 }
+    'selfupdate' { Cmd-SelfUpdate; exit 0 }
+    'clean' {
+        $cleanArgs = if ($Args.Count -gt 1) { $Args[1..($Args.Count - 1)] } else { @() }
+        $all = $false
+        $keep = @()
+        for ($i = 0; $i -lt $cleanArgs.Count; $i++) {
+            switch ($cleanArgs[$i]) {
+                '--all' { $all = $true }
+                '--keep' {
+                    if ($i + 1 -ge $cleanArgs.Count) { Write-Err "--keep requires a version"; exit 1 }
+                    $keep += $cleanArgs[$i + 1]
+                    $i++
+                }
+                default { }
+            }
+        }
+        Cmd-Clean -All:$all -Keep $keep
         exit 0
     }
-    'default' {
-        Cmd-Default -version $Args[1]
-        exit 0
-    }
-    'list' {
-        Cmd-List
-        exit 0
-    }
-    'which' {
-        Cmd-Which
-        exit 0
-    }
-    'version' {
-        Cmd-Version
-        exit 0
-    }
-    { $_ -in @('help', '--help', '-h', '-?') } {
-        Show-Help
-        exit 0
-    }
+    { $_ -in @('help', '--help', '-h', '-?') } { Show-Help; exit 0 }
     default {
-        # Proxy to composer
         $version = Resolve-DesiredVersion
         $phar = Ensure-VersionInstalled $version
         $php = Get-PhpExe
-        
+        Assert-PhpVersionSupported -PhpExe $php -composerSpec $version
         Write-Info "Using Composer $version"
-        
         & $php $phar @Args
         exit $LASTEXITCODE
     }
