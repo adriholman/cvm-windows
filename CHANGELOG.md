@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-01-08
+
+### Changed
+- License clarified to Apache 2.0 with attribution; added LICENSE/NOTICE notices and updated years to 2025-2026
+
 ## [1.1.2] - 2026-01-08
 
 ### Fixed
