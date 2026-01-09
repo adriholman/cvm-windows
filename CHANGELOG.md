@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - License clarified to Apache 2.0 with attribution; added LICENSE/NOTICE notices and updated years to 2025-2026
 
+## [1.1.4] - 2026-01-08
+
+### Added
+- Release archives now include LICENSE and NOTICE files for attribution compliance
+
 ## [1.1.2] - 2026-01-08
 
 ### Fixed

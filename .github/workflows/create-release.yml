@@ -35,6 +35,8 @@ jobs:
           Copy-Item -Path "bin/composer.ps1" -Destination $tempDir
           Copy-Item -Path "bin/cvm-common.psm1" -Destination $tempDir
           Copy-Item -Path "scripts/setup-path.ps1" -Destination $tempDir
+          Copy-Item -Path "LICENSE" -Destination $tempDir
+          Copy-Item -Path "NOTICE" -Destination $tempDir
           Copy-Item -Path "VERSION" -Destination $tempDir
           Copy-Item -Path "CHANGELOG.md" -Destination $tempDir
           Copy-Item -Path "README.md" -Destination $tempDir
