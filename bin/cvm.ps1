@@ -213,7 +213,7 @@ function Cmd-Clean {
         [string[]]$Keep
     )
 
-    $installed = Get-InstalledVersions
+    $installed = @(Get-InstalledVersions)
     if (-not $installed -or $installed.Count -eq 0) {
         Write-Info "No cached versions to clean"
         return
@@ -252,7 +252,7 @@ function Cmd-Clean {
 
 #region Main
 
-if (-not $Args) { $Args = @() }
+if (-not $Args) { $Args = @() } else { $Args = @($Args) }
 $parsed = Parse-GlobalOptions $Args
 Set-CvmContext -Quiet:$parsed.Quiet -Verbose:$parsed.Verbose -SkipVerify:$parsed.SkipVerify -CacheRoot $parsed.CacheRoot -UseLocalAppData:$parsed.UseLocalAppData -Prefix '[cvm]'
 $Args = $parsed.Rest
@@ -272,14 +272,15 @@ switch ($cmd) {
     'version' { Cmd-Version; exit 0 }
     'selfupdate' { Cmd-SelfUpdate; exit 0 }
     'clean' {
-        $cleanArgs = if ($Args.Count -gt 1) { $Args[1..($Args.Count - 1)] } else { @() }
+        $cleanArgs = @()
+        if ($Args.Count -gt 1) { $cleanArgs = $Args[1..($Args.Count - 1)] }
         $all = $false
         $keep = @()
-        for ($i = 0; $i -lt $cleanArgs.Count; $i++) {
+        for ($i = 0; $i -lt $cleanArgs.Length; $i++) {
             switch ($cleanArgs[$i]) {
                 '--all' { $all = $true }
                 '--keep' {
-                    if ($i + 1 -ge $cleanArgs.Count) { Write-Err "--keep requires a version"; exit 1 }
+                    if ($i + 1 -ge $cleanArgs.Length) { Write-Err "--keep requires a version"; exit 1 }
                     $keep += $cleanArgs[$i + 1]
                     $i++
                 }
