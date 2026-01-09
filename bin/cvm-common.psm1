@@ -320,7 +320,8 @@ function Install-ComposerVersionIfNeeded([string]$version) {
 function Get-InstalledVersions {
     $versionsDir = Get-VersionsDir
     if (-not (Test-Path -LiteralPath $versionsDir)) { return @() }
-    Get-ChildItem -LiteralPath $versionsDir -Directory | Select-Object -ExpandProperty Name
+    $result = @(Get-ChildItem -LiteralPath $versionsDir -Directory | Select-Object -ExpandProperty Name)
+    return $result
 }
 
 function Get-PhpExe {

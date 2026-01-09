@@ -131,10 +131,10 @@ function Cmd-Default([string]$version) {
 }
 
 function Cmd-List {
-    $installed = Get-InstalledVersions
+    $installed = @(Get-InstalledVersions)
     $default = Get-DefaultVersion
 
-    if (-not $installed -or $installed.Count -eq 0) {
+    if ($installed.Count -eq 0) {
         Write-Info "No versions installed"
         Write-Host "Run: cvm install <version>" -ForegroundColor Yellow
         return
@@ -250,13 +250,18 @@ function Cmd-SelfUpdate {
             $targetBin = Join-Path $targetRoot 'bin'
             New-CvmDirectory $targetBin
 
-            $files = @('cvm.ps1', 'composer.ps1', 'cvm-common.psm1')
+            $files = @('cvm.ps1', 'composer.ps1', 'cvm-common.psm1', 'setup-path.ps1')
             foreach ($f in $files) {
                 $src = Join-Path $tempDir $f
                 if (-not (Test-Path -LiteralPath $src)) {
                     throw "File $f not found in release archive"
                 }
-                $dst = Join-Path $targetBin $f
+                # setup-path.ps1 goes to root, others to bin
+                $dst = if ($f -eq 'setup-path.ps1') { 
+                    Join-Path $targetRoot $f 
+                } else { 
+                    Join-Path $targetBin $f 
+                }
                 Copy-Item -LiteralPath $src -Destination $dst -Force
                 Write-VerboseMsg "Updated $f"
             }
@@ -345,7 +350,16 @@ switch ($cmd) {
     'list'    { Cmd-List; exit 0 }
     'which'   { Cmd-Which; exit 0 }
     'version' { Cmd-Version; exit 0 }
-    'selfupdate' { Cmd-SelfUpdate; exit 0 }
+    'selfupdate' {
+        $selfArgs = @()
+        if ($Args.Count -gt 1) { $selfArgs = $Args[1..($Args.Count - 1)] }
+        $check = $false
+        foreach ($a in $selfArgs) {
+            if ($a -eq '--check' -or $a -eq '-c') { $check = $true }
+        }
+        Cmd-SelfUpdate -Check:$check
+        exit 0
+    }
     'clean' {
         $cleanArgs = @()
         if ($Args.Count -gt 1) { $cleanArgs = $Args[1..($Args.Count - 1)] }

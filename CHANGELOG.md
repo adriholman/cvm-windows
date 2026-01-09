@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] - 2026-01-08
+
+### Fixed
+- `cvm list` now handles empty or single-version cases correctly (fixed .Count property error)
+- `cvm selfupdate --check` properly respects check-only flag without downloading
+
+### Changed
+- **release.ps1 enhancements**: Added `-Major`, `-Minor`, `-Patch` flags for semantic version auto-increment
+- Dry-run mode no longer mutates VERSION file; changes only applied with `-Push`
+- Improved tag reuse: existing local tags can be pushed without recreation
+
+## [1.1.5] - 2026-01-08
+
+### Fixed
+- `cvm selfupdate --check` now only reports availability and no longer downloads/installs
+
+## [1.1.4] - 2026-01-08
+
+### Added
+- Release archives now include LICENSE and NOTICE files for attribution compliance
+
+## [1.1.3] - 2026-01-08
+
+### Changed
+- License clarified to Apache 2.0 with attribution; added LICENSE/NOTICE notices and updated years to 2025-2026
+
+## [1.1.2] - 2026-01-08
+
+### Fixed
+- **setup-path.ps1 now works from release archives**: Script auto-detects flat structure (release) vs nested structure (repository)
+- Installation from downloaded releases now works correctly without path errors
+
+## [1.1.1] - 2026-01-08
+
+### Fixed
+- **Release archives now include setup-path.ps1**: Installation script was missing from release downloads
+- **Simplified release process**: Removed redundant local ZIP creation from release.ps1 (GitHub Actions handles it)
+
 ## [1.1.0] - 2026-01-08
 
 ### Added

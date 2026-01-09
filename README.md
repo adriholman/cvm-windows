@@ -1,5 +1,10 @@
 # cvm - Composer Version Manager for Windows
 
+[![Latest Stable Release](https://img.shields.io/github/v/release/adriholman/cvm-windows?label=Latest%20Release)](https://github.com/adriholman/cvm-windows/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/adriholman/cvm-windows/total?label=Downloads)](https://github.com/adriholman/cvm-windows/releases)
+[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B%20%7C%207%2B-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
+[![License](https://img.shields.io/github/license/adriholman/cvm-windows?label=License)](https://github.com/adriholman/cvm-windows/blob/main/LICENSE)
+
 > Note
 > This project originated from a personal need. It may contain mistakes or rough edges. You are free to use, modify, and adapt it for your own purposes. If you prefer, you’re very welcome to contribute improvements back to this repository via issues or pull requests.
 
@@ -19,29 +24,32 @@
 
 ## 📦 Installation
 
-### 1. Clone the repository
+### Option A: Download release (recommended)
 
-```powershell
-git clone https://github.com/adriholman/cvm-windows.git
-cd cvm
-```
-
-### 2. Run the installer
+1) Download and unzip `cvm-release.zip` from the latest release.
+2) In the extracted folder, run:
 
 ```powershell
 # Install cvm (adds cvm to your PATH)
-.\scripts\setup-path.ps1 -Action install
+./setup-path.ps1 -Action install
 ```
 
-### 3. Open a new terminal
-
-The script modifies the user PATH. Close and open a new PowerShell terminal to apply the changes.
-
-### 4. Verify installation
+3) Open a new terminal to refresh PATH.
+4) Verify:
 
 ```powershell
 cvm which
 ```
+
+### Option B: Clone the repository
+
+```powershell
+git clone https://github.com/adriholman/cvm-windows.git
+cd cvm-windows
+./scripts/setup-path.ps1 -Action install
+```
+
+Then open a new terminal and validate with `cvm which`.
 
 ## 🚀 Usage
 
@@ -297,7 +305,8 @@ Contributions are welcome! This is a community-friendly project that started as 
 
 ## 📄 License
 
-MIT License - feel free to use, modify, and distribute.
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE) for details and attribution requirements.
+Copyright (c) 2025-2026 Adrian Holman.
 
 ## 🐛 Report Issues
 
