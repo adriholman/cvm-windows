@@ -350,7 +350,16 @@ switch ($cmd) {
     'list'    { Cmd-List; exit 0 }
     'which'   { Cmd-Which; exit 0 }
     'version' { Cmd-Version; exit 0 }
-    'selfupdate' { Cmd-SelfUpdate; exit 0 }
+    'selfupdate' {
+        $selfArgs = @()
+        if ($Args.Count -gt 1) { $selfArgs = $Args[1..($Args.Count - 1)] }
+        $check = $false
+        foreach ($a in $selfArgs) {
+            if ($a -eq '--check' -or $a -eq '-c') { $check = $true }
+        }
+        Cmd-SelfUpdate -Check:$check
+        exit 0
+    }
     'clean' {
         $cleanArgs = @()
         if ($Args.Count -gt 1) { $cleanArgs = $Args[1..($Args.Count - 1)] }
