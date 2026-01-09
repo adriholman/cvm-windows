@@ -250,13 +250,18 @@ function Cmd-SelfUpdate {
             $targetBin = Join-Path $targetRoot 'bin'
             New-CvmDirectory $targetBin
 
-            $files = @('cvm.ps1', 'composer.ps1', 'cvm-common.psm1')
+            $files = @('cvm.ps1', 'composer.ps1', 'cvm-common.psm1', 'setup-path.ps1')
             foreach ($f in $files) {
                 $src = Join-Path $tempDir $f
                 if (-not (Test-Path -LiteralPath $src)) {
                     throw "File $f not found in release archive"
                 }
-                $dst = Join-Path $targetBin $f
+                # setup-path.ps1 goes to root, others to bin
+                $dst = if ($f -eq 'setup-path.ps1') { 
+                    Join-Path $targetRoot $f 
+                } else { 
+                    Join-Path $targetBin $f 
+                }
                 Copy-Item -LiteralPath $src -Destination $dst -Force
                 Write-VerboseMsg "Updated $f"
             }
