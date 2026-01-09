@@ -66,22 +66,36 @@ switch ($Action) {
     'install' {
         Ensure-Dir $TargetBin
         
-        # Copy scripts from repo to user directory
-        $repoBin = Join-Path $PSScriptRoot '..\bin'
+        # Detect if we're in a release archive (flat structure) or repository (nested structure)
+        $scriptDir = $PSScriptRoot
+        $isRelease = Test-Path -LiteralPath (Join-Path $scriptDir 'cvm.ps1')
+        
+        if ($isRelease) {
+            # Release archive: all files in same directory
+            $repoBin = $scriptDir
+            $repoVersion = Join-Path $scriptDir 'VERSION'
+            Write-Info "Detected release archive structure"
+        } else {
+            # Repository: standard folder structure
+            $repoBin = Join-Path $scriptDir '..\bin'
+            $repoVersion = Join-Path $scriptDir '..\VERSION'
+            Write-Info "Detected repository structure"
+        }
+        
+        # Copy scripts from source to user directory
         $files = @('cvm.ps1','composer.ps1','cvm-common.psm1')
         foreach ($f in $files) {
             $src = Join-Path $repoBin $f
             if (-not (Test-Path -LiteralPath $src)) {
-                Write-Error "bin\$f not found in repository. Run this script from the repo root."
+                Write-Error "$f not found. Expected at: $src"
                 exit 1
             }
             $dst = Join-Path $TargetBin $f
             Copy-Item -LiteralPath $src -Destination $dst -Force
-            Write-Info "Copied bin\$f -> $dst"
+            Write-Info "Copied $f -> $dst"
         }
         
         # Copy VERSION file
-        $repoVersion = Join-Path $PSScriptRoot '..\VERSION'
         if (Test-Path -LiteralPath $repoVersion) {
             $cvmRoot = Split-Path $TargetBin -Parent
             $targetVersion = Join-Path $cvmRoot 'VERSION'
@@ -100,7 +114,7 @@ switch ($Action) {
         Update-UserPath -dir $TargetBin
         
         Write-Host "`n✓ Installation completed" -ForegroundColor Green
-        Write-Host "  Script installed in: $targetScript" -ForegroundColor Gray
+        Write-Host "  Scripts installed in: $TargetBin" -ForegroundColor Gray
         Write-Host "  Open a NEW terminal to use 'cvm' and 'composer'" -ForegroundColor Yellow
     }
     
