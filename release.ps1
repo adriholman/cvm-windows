@@ -3,7 +3,7 @@
 .SYNOPSIS
     Automated release script for cvm
 .DESCRIPTION
-    Creates a release archive, commits changes, creates a git tag, and pushes to GitHub.
+    Creates a git tag and pushes to GitHub. GitHub Actions will automatically create the release archive.
     Requires git to be installed and configured.
 .PARAMETER Version
     Version to release (reads from VERSION file if not provided)
@@ -11,10 +11,10 @@
     Actually push to GitHub (default: false for safety - shows what would happen)
 .EXAMPLE
     .\release.ps1 -Push
-    # Creates v1.1.0 release and pushes to GitHub
+    # Creates v1.1.0 tag and pushes to GitHub
 .EXAMPLE
     .\release.ps1 -Version 1.2.0 -Push
-    # Creates v1.2.0 release and pushes to GitHub
+    # Creates v1.2.0 tag and pushes to GitHub
 #>
 param(
     [string]$Version,
@@ -72,8 +72,6 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 }
 
 $tag = "v$Version"
-$zipFile = "cvm-release.zip"
-$tempDir = "cvm-release-$Version"
 
 # Step 1: Check git status
 Write-Step "Checking git status..."
@@ -95,94 +93,32 @@ if ($tagExists) {
 }
 Write-Success "Tag $tag does not exist"
 
-# Step 3: Create release archive
-Write-Step "Creating release archive..."
-if (Test-Path -LiteralPath $tempDir) {
-    Remove-Item -Recurse -Force $tempDir
-}
-New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-
-$files = @(
-    'bin/cvm.ps1',
-    'bin/composer.ps1',
-    'bin/cvm-common.psm1',
-    'VERSION',
-    'CHANGELOG.md',
-    'README.md'
-)
-
-foreach ($file in $files) {
-    $src = Join-Path $projectRoot $file
-    if (-not (Test-Path -LiteralPath $src)) {
-        Write-Error-Custom "File not found: $file"
-        Remove-Item -Recurse -Force $tempDir
-        exit 1
-    }
-    Copy-Item -LiteralPath $src -Destination $tempDir -Force
-    Write-Host "  • Copied $file"
-}
-
-# Create zip archive
-if (Test-Path -LiteralPath $zipFile) {
-    Remove-Item -LiteralPath $zipFile -Force
-}
-
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    (Resolve-Path $tempDir).Path,
-    $zipFile,
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $false
-)
-
-# Verify zip
-if (-not (Test-Path -LiteralPath $zipFile)) {
-    Write-Error-Custom "Failed to create zip archive"
-    Remove-Item -Recurse -Force $tempDir
-    exit 1
-}
-
-$zipSize = (Get-Item -LiteralPath $zipFile).Length
-Write-Success "Created $zipFile ($([math]::Round($zipSize/1KB))KB)"
-
-# Cleanup temp directory
-Remove-Item -Recurse -Force $tempDir
-
-# Step 4: Create git tag
+# Step 3: Create git tag
 Write-Step "Creating git tag $tag..."
 & git tag -a $tag -m "Release version $Version"
 Write-Success "Created tag $tag"
 
-# Step 5: Summary and push confirmation
+# Step 4: Summary and push confirmation
 Write-Header "RELEASE READY"
 Write-Host "Version:      $Version" -ForegroundColor Cyan
 Write-Host "Tag:          $tag" -ForegroundColor Cyan
-Write-Host "Archive:      $zipFile" -ForegroundColor Cyan
 Write-Host "Git Status:   Tag created (not pushed)" -ForegroundColor Yellow
 
 if (-not $Push) {
     Write-Host "`n⚠️  DRY RUN MODE" -ForegroundColor Yellow
     Write-Host "To push to GitHub, run:" -ForegroundColor Yellow
-    Write-Host "  .\release.ps1 -Version $Version -Push" -ForegroundColor Cyan
+    Write-Host "  .\release.ps1 -Push" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Commands that WOULD be executed:" -ForegroundColor Yellow
-    Write-Host "  git push origin main" -ForegroundColor Gray
     Write-Host "  git push origin $tag" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "To delete this test tag, run:" -ForegroundColor Yellow
+    Write-Host "  git tag -d $tag" -ForegroundColor Gray
     exit 0
 }
 
-# Step 6: Push to GitHub
-Write-Step "Pushing to GitHub..."
-Write-Host "  • git push origin main"
-& git push origin main
-if ($LASTEXITCODE -ne 0) {
-    Write-Error-Custom "Failed to push main branch"
-    # Cleanup tag on failure
-    & git tag -d $tag
-    exit 1
-}
-Write-Success "Pushed main branch"
-
+# Step 5: Push tag to GitHub
+Write-Step "Pushing tag to GitHub..."
 Write-Host "  • git push origin $tag"
 & git push origin $tag
 if ($LASTEXITCODE -ne 0) {
@@ -191,18 +127,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Success "Pushed tag $tag"
 
-# Step 7: Success
+# Step 6: Success
 Write-Header "✓ RELEASE PUBLISHED"
-Write-Host "Release v$Version has been published!" -ForegroundColor Green
+Write-Host "Release v$Version tag has been pushed!" -ForegroundColor Green
 Write-Host ""
 Write-Host "What happens next:" -ForegroundColor Yellow
-Write-Host "  1. GitHub Actions will automatically create the release" -ForegroundColor Cyan
-Write-Host "  2. Archive will be uploaded as release asset" -ForegroundColor Cyan
-Write-Host "  3. Users can then run: cvm selfupdate" -ForegroundColor Cyan
+Write-Host "  1. GitHub Actions detects the new tag" -ForegroundColor Cyan
+Write-Host "  2. Workflow creates cvm-release.zip automatically" -ForegroundColor Cyan
+Write-Host "  3. Release is published with the archive attached" -ForegroundColor Cyan
+Write-Host "  4. Users can then run: cvm selfupdate" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Monitor progress at:" -ForegroundColor Yellow
 Write-Host "  https://github.com/adriholman/cvm-windows/actions" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "View release:" -ForegroundColor Yellow
+Write-Host "View release (once ready):" -ForegroundColor Yellow
 Write-Host "  https://github.com/adriholman/cvm-windows/releases/tag/$tag" -ForegroundColor Cyan
 Write-Host ""
