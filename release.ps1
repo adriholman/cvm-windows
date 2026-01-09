@@ -7,17 +7,29 @@
     Requires git to be installed and configured.
 .PARAMETER Version
     Version to release (reads from VERSION file if not provided)
+.PARAMETER Major
+    Auto-increment major version (X.0.0)
+.PARAMETER Minor
+    Auto-increment minor version (X.Y.0)
+.PARAMETER Patch
+    Auto-increment patch version (X.Y.Z)
 .PARAMETER Push
     Actually push to GitHub (default: false for safety - shows what would happen)
 .EXAMPLE
-    .\release.ps1 -Push
-    # Creates v1.1.0 tag and pushes to GitHub
+    .\release.ps1 -Patch -Push
+    # Increments patch (1.1.5 -> 1.1.6) and pushes to GitHub
 .EXAMPLE
-    .\release.ps1 -Version 1.2.0 -Push
-    # Creates v1.2.0 tag and pushes to GitHub
+    .\release.ps1 -Minor -Push
+    # Increments minor (1.1.5 -> 1.2.0) and pushes to GitHub
+.EXAMPLE
+    .\release.ps1 -Version 2.0.0 -Push
+    # Uses explicit version 2.0.0 and pushes to GitHub
 #>
 param(
     [string]$Version,
+    [switch]$Major,
+    [switch]$Minor,
+    [switch]$Patch,
     [switch]$Push
 )
 
@@ -52,15 +64,46 @@ if (-not $gitPath) {
 # Get script directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = $scriptDir
+$versionFile = Join-Path $projectRoot 'VERSION'
 
-# Read version from file if not provided
-if (-not $Version) {
-    $versionFile = Join-Path $projectRoot 'VERSION'
-    if (-not (Test-Path -LiteralPath $versionFile)) {
-        Write-Error-Custom "VERSION file not found"
+# Check for mutually exclusive increment flags
+$incrementFlags = @(@($Major, $Minor, $Patch) | Where-Object { $_ })
+if ($incrementFlags.Count -gt 1) {
+    Write-Error-Custom "Cannot use -Major, -Minor, and -Patch together. Choose one."
+    exit 1
+}
+
+if ($Version -and $incrementFlags.Count -gt 0) {
+    Write-Error-Custom "Cannot use -Version with -Major/-Minor/-Patch. Choose one approach."
+    exit 1
+}
+
+# Read current version from file
+if (-not (Test-Path -LiteralPath $versionFile)) {
+    Write-Error-Custom "VERSION file not found"
+    exit 1
+}
+$currentVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+
+# Auto-increment or use provided/current version
+if ($Major -or $Minor -or $Patch) {
+    try {
+        $ver = [version]$currentVersion
+        if ($Major) {
+            $Version = "$($ver.Major + 1).0.0"
+        } elseif ($Minor) {
+            $Version = "$($ver.Major).$($ver.Minor + 1).0"
+        } elseif ($Patch) {
+            $Version = "$($ver.Major).$($ver.Minor).$($ver.Build + 1)"
+        }
+        Write-Host "Auto-increment: $currentVersion -> $Version" -ForegroundColor Cyan
+    } catch {
+        Write-Error-Custom "Failed to parse current version '$currentVersion' as semantic version"
         exit 1
     }
-    $Version = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+} elseif (-not $Version) {
+    # Use current version from file
+    $Version = $currentVersion
 }
 
 Write-Header "CVM RELEASE AUTOMATION v$Version"
@@ -78,7 +121,7 @@ Write-Step "Checking git status..."
 $gitStatus = & git status --porcelain
 if ($gitStatus) {
     Write-Host "Uncommitted changes detected:" -ForegroundColor Yellow
-    Write-Host $gitStatus
+    Write-Host ($gitStatus -join "`n")
     Write-Error-Custom "Please commit all changes before releasing"
     exit 1
 }
@@ -101,6 +144,17 @@ if ($tagExists) {
 # Step 3: Create git tag (only when pushing and tag not present)
 if ($Push -and -not $tagExists) {
     Write-Step "Creating git tag $tag..."
+    
+    # Update and commit VERSION file if it was auto-incremented
+    if ($Major -or $Minor -or $Patch) {
+        Set-Content -LiteralPath $versionFile -Value $Version -Encoding UTF8 -NoNewline
+        Write-Success "Updated VERSION file to $Version"
+        
+        & git add VERSION
+        & git commit -m "Bump version to $Version"
+        Write-Success "Committed VERSION update"
+    }
+    
     & git tag -a $tag -m "Release version $Version"
     Write-Success "Created tag $tag"
 }
@@ -114,16 +168,33 @@ Write-Host "Git Status:   $(if ($Push) { 'Tag ready to push' } else { 'No change
 if (-not $Push) {
     Write-Host "`n⚠️  DRY RUN MODE" -ForegroundColor Yellow
     Write-Host "To create and push, run:" -ForegroundColor Yellow
-    Write-Host "  .\release.ps1 -Push" -ForegroundColor Cyan
+    Write-Host "  .\release.ps1 $(if ($Major) { '-Major' } elseif ($Minor) { '-Minor' } elseif ($Patch) { '-Patch' }) -Push" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Commands that WOULD be executed:" -ForegroundColor Yellow
+    if ($Major -or $Minor -or $Patch) { 
+        Write-Host "  Set-Content VERSION '$Version'" -ForegroundColor Gray
+        Write-Host "  git add VERSION" -ForegroundColor Gray
+        Write-Host "  git commit -m 'Bump version to $Version'" -ForegroundColor Gray
+    }
     if (-not $tagExists) { Write-Host "  git tag -a $tag -m 'Release version $Version'" -ForegroundColor Gray }
+    if ($Major -or $Minor -or $Patch) { Write-Host "  git push origin main" -ForegroundColor Gray }
     Write-Host "  git push origin $tag" -ForegroundColor Gray
     exit 0
 }
 
 # Step 5: Push tag to GitHub
 Write-Step "Pushing tag to GitHub..."
+
+# Push VERSION commit if it was auto-incremented
+if (($Major -or $Minor -or $Patch) -and -not $tagExists) {
+    Write-Host "  • git push origin main"
+    & git push origin main
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Custom "Failed to push VERSION update"
+        exit 1
+    }
+}
+
 Write-Host "  • git push origin $tag"
 & git push origin $tag
 if ($LASTEXITCODE -ne 0) {
