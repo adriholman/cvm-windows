@@ -344,12 +344,22 @@ if (-not $Args -or $Args.Count -eq 0) {
 
 $cmd = $Args[0].ToLowerInvariant()
 
+# List of valid cvm commands
+$validCommands = @('install', 'default', 'list', 'which', 'version', '--version', 'selfupdate', 'clean', 'help', '--help', '-h', '-?')
+
+# Check if first arg looks like a flag (starts with -) but is not a known cvm command
+if ($cmd.StartsWith('-') -and $cmd -notin $validCommands) {
+    Write-Err "Unknown option: $cmd"
+    Write-Host "Use 'cvm help' or 'cvm --help' to see available commands" -ForegroundColor Yellow
+    exit 1
+}
+
 switch ($cmd) {
     'install' { Cmd-Install -version $Args[1]; exit 0 }
     'default' { Cmd-Default -version $Args[1]; exit 0 }
     'list'    { Cmd-List; exit 0 }
     'which'   { Cmd-Which; exit 0 }
-    'version' { Cmd-Version; exit 0 }
+    { $_ -in @('version', '--version') } { Cmd-Version; exit 0 }
     'selfupdate' {
         $selfArgs = @()
         if ($Args.Count -gt 1) { $selfArgs = $Args[1..($Args.Count - 1)] }
