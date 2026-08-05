@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `setup-path.ps1` no longer exposes `composer.ps1` or `cvm.ps1` directly in PATH; public commands now go through `.cmd` shims to avoid PowerShell signing-policy failures
+- `setup-path.ps1` now adds Composer's global `vendor\bin` directory to the user PATH so commands installed with `composer global require` resolve correctly
+- `cvm selfupdate` now preserves the shim-based install layout and removes legacy direct `.ps1` entrypoints
+
 ## [1.1.7] - 2026-01-23
 
 ### Fixed

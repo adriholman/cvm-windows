@@ -101,6 +101,14 @@ For more info: https://github.com/adriholman/cvm-windows
 '@ | Write-Host
 }
 
+function Get-InstalledLauncherPath([string]$scriptName) {
+    switch ($scriptName) {
+        'cvm.ps1' { return Join-Path $PSScriptRoot 'cvm-launcher.ps1' }
+        'composer.ps1' { return Join-Path $PSScriptRoot 'composer-launcher.ps1' }
+        default { return Join-Path $PSScriptRoot $scriptName }
+    }
+}
+
 #region Commands
 
 function Cmd-Install([string]$version) {
@@ -260,11 +268,27 @@ function Cmd-SelfUpdate {
                 $dst = if ($f -eq 'setup-path.ps1') { 
                     Join-Path $targetRoot $f 
                 } else { 
-                    Join-Path $targetBin $f 
+                    Get-InstalledLauncherPath $f
                 }
                 Copy-Item -LiteralPath $src -Destination $dst -Force
                 Write-VerboseMsg "Updated $f"
             }
+
+            foreach ($legacyPath in @(
+                (Join-Path $targetBin 'cvm.ps1'),
+                (Join-Path $targetBin 'composer.ps1')
+            )) {
+                if (Test-Path -LiteralPath $legacyPath) {
+                    Remove-Item -LiteralPath $legacyPath -Force -ErrorAction SilentlyContinue
+                    Write-VerboseMsg "Removed legacy entrypoint $legacyPath"
+                }
+            }
+
+            $cvmCmd = Join-Path $targetBin 'cvm.cmd'
+            $composerCmd = Join-Path $targetBin 'composer.cmd'
+            Set-Content -LiteralPath $cvmCmd -Value "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0cvm-launcher.ps1`" %*" -Encoding ASCII
+            Set-Content -LiteralPath $composerCmd -Value "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0composer-launcher.ps1`" %*" -Encoding ASCII
+            Write-VerboseMsg 'Updated command wrappers'
 
             # Update VERSION file
             $versionDst = Join-Path $targetRoot 'VERSION'

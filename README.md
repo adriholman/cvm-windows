@@ -17,7 +17,7 @@
 - 🌍 **Global**: Set a default version for the entire system
 - 🔐 **SHA256 verification**: Verifies checksums for exact versions (security)
 - ⚡ **Transparent proxy**: Run `cvm install 2` then `cvm require vendor/package` without thinking
-- 🛠️ **Clean PATH**: Single `cvm.ps1` script in your PATH, no system pollution
+- 🛠️ **Clean PATH**: Only command shims are exposed in PATH, while PowerShell launchers stay internal
 - 📊 **Progress downloads**: Shows approximate file size and progress bar (can be silenced with `--quiet`)
 - 🧭 **Flexible caches**: Uses `%USERPROFILE%\.cvm` by default or `%LOCALAPPDATA%\cvm`/`--cache-root`
 - 🧹 **Quick maintenance**: `cvm clean` to purge unused versions and `cvm selfupdate` to refresh scripts
@@ -30,7 +30,7 @@
 2) In the extracted folder, run:
 
 ```powershell
-# Install cvm (adds cvm to your PATH)
+# Install cvm (adds cvm and Composer global bin to your PATH)
 ./setup-path.ps1 -Action install
 ```
 
@@ -103,7 +103,7 @@ cvm list
 
 ### Use Composer normally
 
-Once installed, you can use the `composer` command directly. The launcher resolves the version (env var, `.composer-version`, or global default), ensures it’s installed, and runs Composer.
+Once installed, you can use the `composer` command directly. The launcher resolves the version (env var, `.composer-version`, or global default), ensures it’s installed, and runs Composer. The installer also adds Composer's default global bin directory to your user `PATH`, so tools installed with `composer global require` remain invokable.
 
 ```powershell
 composer --version
@@ -153,7 +153,11 @@ cvm resolves the version to use in the following priority order:
 ```
 %USERPROFILE%\.cvm\
 ├── bin\
-│   └── cvm.ps1              # Installed script (copy from repo)
+│   ├── cvm.cmd              # Public command shim used by PowerShell/cmd
+│   ├── composer.cmd         # Public command shim used by PowerShell/cmd
+│   ├── cvm-launcher.ps1     # Internal PowerShell launcher
+│   ├── composer-launcher.ps1# Internal PowerShell launcher
+│   └── cvm-common.psm1      # Shared module
 ├── versions\
 │   ├── 1\
 │   │   └── composer.phar    # Composer 1.x (latest version)
@@ -250,6 +254,7 @@ jobs:
 
 Remarks:
 - The `composer` wrapper uses cvm's version resolution (environment, .composer-version, default)
+- Global Composer binaries resolve from `%APPDATA%\Composer\vendor\bin` unless you override `COMPOSER_HOME`
 - Use `--quiet`/`--verbose` with `cvm` to control noise in CI logs
 - For cache in `%LOCALAPPDATA%`, use: `cvm --use-localappdata install 2`
 
@@ -292,6 +297,8 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cvm"
 | Slow download / timeout | Slow network or mirror down | Retry; use `--use-localappdata` for local cache; automatic fallback to mirrors and retries |
 | Space not cleaned | Versions in use | Run `cvm clean --all` (or `--keep 2`) to force cleanup |
 | Aliases/commands not found after install | PATH not reloaded | Open a new terminal or reload `$PROFILE` |
+| `composer` blocked by PowerShell signing policy | Old installs exposed `composer.ps1` directly in PATH | Re-run `setup-path.ps1 -Action install` to replace direct `.ps1` entrypoints with `.cmd` shims |
+| `laravel` or another global Composer tool is not recognized | Composer global bin directory missing from PATH | Re-run `setup-path.ps1 -Action install` or add `%APPDATA%\Composer\vendor\bin` to your user PATH |
 
 ## 🤝 Contributing
 
