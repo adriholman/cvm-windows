@@ -19,9 +19,10 @@ Set-StrictMode -Version Latest
 
 $UserHome = [Environment]::GetFolderPath('UserProfile')
 $TargetBin = Join-Path $UserHome ".cvm\bin"
-$ProfilePath = $PROFILE
+$TargetLauncherCvm = Join-Path $TargetBin 'cvm-launcher.ps1'
+$TargetLauncherComposer = Join-Path $TargetBin 'composer-launcher.ps1'
 
-function Ensure-Dir($p) { 
+function New-CvmDirectory($p) { 
     if (-not (Test-Path -LiteralPath $p)) { 
         [void](New-Item -ItemType Directory -Path $p) 
     } 
@@ -29,6 +30,19 @@ function Ensure-Dir($p) {
 
 function Write-Info($m) { 
     Write-Host "[setup] $m" -ForegroundColor Cyan 
+}
+
+function Get-ComposerHomeDir {
+    $userComposerHome = [Environment]::GetEnvironmentVariable('COMPOSER_HOME', 'User')
+    if ($userComposerHome) { return $userComposerHome }
+
+    if ($env:COMPOSER_HOME) { return $env:COMPOSER_HOME }
+
+    return Join-Path $env:APPDATA 'Composer'
+}
+
+function Get-ComposerGlobalBinDir {
+    Join-Path (Get-ComposerHomeDir) 'vendor\bin'
 }
 
 function Update-UserPath([string]$dir, [switch]$Remove) {
@@ -64,7 +78,7 @@ function Update-UserPath([string]$dir, [switch]$Remove) {
 
 switch ($Action) {
     'install' {
-        Ensure-Dir $TargetBin
+        New-CvmDirectory $TargetBin
         
         # Detect if we're in a release archive (flat structure) or repository (nested structure)
         $scriptDir = $PSScriptRoot
@@ -83,16 +97,27 @@ switch ($Action) {
         }
         
         # Copy scripts from source to user directory
-        $files = @('cvm.ps1','composer.ps1','cvm-common.psm1')
-        foreach ($f in $files) {
-            $src = Join-Path $repoBin $f
+        $fileMap = @(
+            @{ Source = 'cvm.ps1'; Destination = $TargetLauncherCvm },
+            @{ Source = 'composer.ps1'; Destination = $TargetLauncherComposer },
+            @{ Source = 'cvm-common.psm1'; Destination = (Join-Path $TargetBin 'cvm-common.psm1') }
+        )
+        foreach ($entry in $fileMap) {
+            $src = Join-Path $repoBin $entry.Source
             if (-not (Test-Path -LiteralPath $src)) {
-                Write-Error "$f not found. Expected at: $src"
+                Write-Error "$($entry.Source) not found. Expected at: $src"
                 exit 1
             }
-            $dst = Join-Path $TargetBin $f
-            Copy-Item -LiteralPath $src -Destination $dst -Force
-            Write-Info "Copied $f -> $dst"
+            Copy-Item -LiteralPath $src -Destination $entry.Destination -Force
+            Write-Info "Copied $($entry.Source) -> $($entry.Destination)"
+        }
+
+        foreach ($legacyName in @('cvm.ps1', 'composer.ps1')) {
+            $legacyPath = Join-Path $TargetBin $legacyName
+            if (Test-Path -LiteralPath $legacyPath) {
+                Remove-Item -LiteralPath $legacyPath -Force -ErrorAction SilentlyContinue
+                Write-Info "Removed legacy script from PATH surface: $legacyPath"
+            }
         }
         
         # Copy VERSION file
@@ -106,29 +131,32 @@ switch ($Action) {
         # Create .cmd wrappers for cross-shell compatibility
         $cvmCmd = Join-Path $TargetBin 'cvm.cmd'
         $composerCmd = Join-Path $TargetBin 'composer.cmd'
-        Set-Content -Path $cvmCmd -Value "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0cvm.ps1`" %*" -Encoding ASCII
-        Set-Content -Path $composerCmd -Value "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0composer.ps1`" %*" -Encoding ASCII
+        Set-Content -Path $cvmCmd -Value "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0cvm-launcher.ps1`" %*" -Encoding ASCII
+        Set-Content -Path $composerCmd -Value "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0composer-launcher.ps1`" %*" -Encoding ASCII
         Write-Info "Created .cmd wrappers for cross-shell compatibility"
         
         # Add to PATH
         Update-UserPath -dir $TargetBin
+        Update-UserPath -dir (Get-ComposerGlobalBinDir)
         
         Write-Host "`n✓ Installation completed" -ForegroundColor Green
         Write-Host "  Scripts installed in: $TargetBin" -ForegroundColor Gray
+        Write-Host "  Composer global bin added to PATH: $(Get-ComposerGlobalBinDir)" -ForegroundColor Gray
         Write-Host "  Open a NEW terminal to use 'cvm' and 'composer'" -ForegroundColor Yellow
     }
     
     'uninstall' {
-        $targetScript = Join-Path $TargetBin 'cvm.ps1'
-        if (Test-Path -LiteralPath $targetScript) {
-            Remove-Item -LiteralPath $targetScript -Force -ErrorAction SilentlyContinue
-            Write-Info "Removed: $targetScript"
-        }
-
-        $targetComposer = Join-Path $TargetBin 'composer.ps1'
-        if (Test-Path -LiteralPath $targetComposer) {
-            Remove-Item -LiteralPath $targetComposer -Force -ErrorAction SilentlyContinue
-            Write-Info "Removed: $targetComposer"
+        foreach ($scriptPath in @(
+            $TargetLauncherCvm,
+            $TargetLauncherComposer,
+            (Join-Path $TargetBin 'cvm-common.psm1'),
+            (Join-Path $TargetBin 'cvm.ps1'),
+            (Join-Path $TargetBin 'composer.ps1')
+        )) {
+            if (Test-Path -LiteralPath $scriptPath) {
+                Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
+                Write-Info "Removed: $scriptPath"
+            }
         }
         
         # Remove .cmd wrappers
@@ -145,6 +173,7 @@ switch ($Action) {
 
         # Remove PATH entry
         Update-UserPath -dir $TargetBin -Remove
+        Update-UserPath -dir (Get-ComposerGlobalBinDir) -Remove
 
         # Clean all cvm data: bin, versions, config
         $cvmRoot = Split-Path $TargetBin -Parent
