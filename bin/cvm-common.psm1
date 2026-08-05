@@ -211,48 +211,63 @@ function Invoke-DownloadFile {
     if ($length) { Write-VerboseMsg "Size: $(Format-Size $length)" }
     $showProgress = -not $script:CvmContext.Quiet
 
-    $handler = [System.Net.Http.HttpClientHandler]::new()
-    $client = [System.Net.Http.HttpClient]::new($handler)
-    $client.Timeout = [TimeSpan]::FromSeconds($script:CvmContext.TimeoutSec)
+    $client = $null
+    $handler = $null
+    $canUseHttpClient = $true
+    try {
+        if (-not ([type]::GetType('System.Net.Http.HttpClientHandler, System.Net.Http'))) {
+            Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+        }
+        $handler = New-Object System.Net.Http.HttpClientHandler
+        $client = New-Object System.Net.Http.HttpClient($handler)
+        $client.Timeout = [TimeSpan]::FromSeconds($script:CvmContext.TimeoutSec)
+    } catch {
+        $canUseHttpClient = $false
+        Write-VerboseMsg "System.Net.Http not available, using Invoke-WebRequest fallback"
+    }
 
     $stream = $null
     $fileStream = $null
     try {
-        $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
-        if (-not $response.IsSuccessStatusCode) { throw "HTTP $($response.StatusCode) $($response.ReasonPhrase)" }
-        $stream = $response.Content.ReadAsStreamAsync().Result
-        $fileStream = [System.IO.FileStream]::new($Destination, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-        $buffer = New-Object byte[] 65536
-        $totalRead = 0L
-        $lastPercent = -1
-        while ($true) {
-            $read = $stream.Read($buffer, 0, $buffer.Length)
-            if ($read -le 0) { break }
-            $fileStream.Write($buffer, 0, $read)
-            $totalRead += $read
-            if ($showProgress -and $length -gt 0) {
-                $percent = [int](($totalRead * 100) / $length)
-                if ($percent -ne $lastPercent) {
-                    Write-Progress -Activity "Downloading" -Status "$(Format-Size $totalRead) of $(Format-Size $length)" -PercentComplete $percent
-                    $lastPercent = $percent
+        if ($canUseHttpClient) {
+            $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
+            if (-not $response.IsSuccessStatusCode) { throw "HTTP $($response.StatusCode) $($response.ReasonPhrase)" }
+            $stream = $response.Content.ReadAsStreamAsync().Result
+            $fileStream = [System.IO.FileStream]::new($Destination, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            $buffer = New-Object byte[] 65536
+            $totalRead = 0L
+            $lastPercent = -1
+            while ($true) {
+                $read = $stream.Read($buffer, 0, $buffer.Length)
+                if ($read -le 0) { break }
+                $fileStream.Write($buffer, 0, $read)
+                $totalRead += $read
+                if ($showProgress -and $length -gt 0) {
+                    $percent = [int](($totalRead * 100) / $length)
+                    if ($percent -ne $lastPercent) {
+                        Write-Progress -Activity "Downloading" -Status "$(Format-Size $totalRead) of $(Format-Size $length)" -PercentComplete $percent
+                        $lastPercent = $percent
+                    }
+                } elseif ($showProgress) {
+                    Write-Progress -Activity "Downloading" -Status "$(Format-Size $totalRead)" -PercentComplete -1
                 }
-            } elseif ($showProgress) {
-                Write-Progress -Activity "Downloading" -Status "$(Format-Size $totalRead)" -PercentComplete -1
             }
+        } else {
+            Invoke-WebRequest -Uri $Url -OutFile $Destination -TimeoutSec $script:CvmContext.TimeoutSec -UseBasicParsing
         }
         if ($showProgress) { Write-Progress -Activity "Downloading" -Completed }
     } catch {
         if ($showProgress) { Write-Progress -Activity "Downloading" -Completed }
         if ($fileStream) { $fileStream.Dispose() }
         if ($stream) { $stream.Dispose() }
-        $client.Dispose()
+        if ($client) { $client.Dispose() }
         if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue }
         throw "Error downloading from ${Url}: $($_.Exception.Message)"
     }
     finally {
         if ($fileStream) { $fileStream.Dispose() }
         if ($stream) { $stream.Dispose() }
-        $client.Dispose()
+        if ($client) { $client.Dispose() }
     }
 }
 
